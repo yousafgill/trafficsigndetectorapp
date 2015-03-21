@@ -47,6 +47,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     private MenuItem               mItemDetectShapes;
     private MenuItem               mItemSignsRecognize;
     private MenuItem               mItemPreviewResolution;
+    private MenuItem			   mItemTestFann;
 
     private SubMenu mResolutionMenu;
     private MenuItem[] mResolutionMenuItems;
@@ -64,6 +65,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
                     Log.i(TAG, "OpenCV loaded successfully");
 
                     // Load native library after(!) OpenCV initialization
+                    System.loadLibrary("gnustl_shared");
                     System.loadLibrary("sign_detector");
 
                     mOpenCvCameraView.enableView();                    
@@ -105,6 +107,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         mItemErosionDilation = menu.add("Erosion Dilation");
         mItemDetectShapes = menu.add("Detect Shapes");
         mItemSignsRecognize = menu.add("Signs Recognize");
+        mItemTestFann = menu.add("Fann Test");
         
         mResolutionMenu = menu.addSubMenu("Resolution");
         mResolutionList = mOpenCvCameraView.getResolutionList();
@@ -198,6 +201,8 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
             mViewMode = VIEW_DETECT_SHAPES;
         } else if (item == mItemSignsRecognize) {
             mViewMode = VIEW_SIGNS_RECOGNIZE;
+        } else if (item == mItemTestFann) {
+            testFann();
         } else {
         	Log.i(TAG, "called onOptionsItemSelected: selected item group id: " + item.getGroupId());
         	if( item.getGroupId() == 1 ) {        		
@@ -217,5 +222,6 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         return true;
     }
 
-    public native void DetectTrafficSigns(long matAddrRgba, int viewMode);
+    private static native void DetectTrafficSigns(long matAddrRgba, int viewMode);
+    private static native void testFann();
 }
