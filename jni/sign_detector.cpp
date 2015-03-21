@@ -6,6 +6,13 @@
 
 using namespace cv;
 
+#define VIEW_HLS_CONVERSION 0
+#define VIEW_COLOR_EXTRACTION 1
+#define VIEW_CANNY_CONVERSION 2
+#define VIEW_EROSION_DILATION 3
+#define VIEW_DETECT_SHAPES 4
+#define VIEW_SIGNS_RECOGNIZE 5
+
 const float scaleFactor = 3.0f;
 Scalar circleColor(43, 215, 96);
 Scalar rectangleColor(204, 0, 102);
@@ -101,9 +108,9 @@ void findShapes(cv::Mat frame, cv::Mat canny) {
 }
 
 extern "C" {
-	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns(JNIEnv*, jobject, jlong addrRgba);
+	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns(JNIEnv*, jobject, jlong addrRgba, jint option);
 	
-	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns(JNIEnv*, jobject, jlong addrRgba) {
+	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns(JNIEnv*, jobject, jlong addrRgba, jint option) {
 		Mat& frame = *(Mat*)addrRgba;
 		cv::Mat tempMat, resultMat;		
 		
@@ -125,8 +132,10 @@ extern "C" {
 		cv::cvtColor(frame , tempMat , CV_RGBA2RGB);
 		cv::cvtColor(tempMat, tempMat, CV_RGB2HLS);
 		
-		// Convert the image from BGR into an HLS image
-		//cv::cvtColor(frame , tempMat , CV_BGR2HLS);
+		if( option == VIEW_HLS_CONVERSION ) {
+			frame = tempMat;
+			return;
+		}
 	
 		for (int i = 0; i < NUM_RANGES; i++) {
 			cv::inRange(tempMat, colorRanges[i][0], colorRanges[i][1], colorRangesMat[i]);
@@ -138,13 +147,28 @@ extern "C" {
 			}
 		}
 	
+		if( option == VIEW_COLOR_EXTRACTION ) {
+			frame = resultMat;
+			return;
+		}
+		
 		// Blur the gray image
 		cv::blur(resultMat, tempMat, Size(3, 3), cv::Point(0, 0));
 		cv::Canny(tempMat, resultMat, 0.3, 2, 3);
 	
+		if( option == VIEW_CANNY_CONVERSION ) {
+			frame = resultMat;
+			return;
+		}
+		
 		cv::erode(resultMat, tempMat, element);
 		cv::dilate(tempMat, resultMat, element);
 	
+		if( option == VIEW_EROSION_DILATION ) {
+			frame = resultMat;
+			return;
+		}
+		
 		findShapes(frame, resultMat);
 	}
 }

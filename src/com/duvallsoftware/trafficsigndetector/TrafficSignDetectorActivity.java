@@ -14,6 +14,7 @@ import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
+import android.hardware.Camera.Parameters;
 import android.hardware.Camera.Size;
 import android.os.Bundle;
 import android.util.Log;
@@ -26,21 +27,25 @@ import android.widget.Toast;
 
 public class TrafficSignDetectorActivity extends Activity implements CvCameraViewListener2 {
     private static final String    TAG = "TrafficSignsDetector::Activity";
-
-    private static final int       VIEW_MODE_RGBA			= 0;
-    private static final int       VIEW_MODE_GRAY			= 1;
-    private static final int       VIEW_MODE_CANNY			= 2;
-    private static final int       VIEW_MODE_DETECT_SIGNS	= 8;
+    
+    private static final int       VIEW_HLS_CONVERSION		= 0;
+    private static final int       VIEW_COLOR_EXTRACTION	= 1;
+    private static final int       VIEW_CANNY_CONVERSION	= 2;
+    private static final int       VIEW_EROSION_DILATION	= 3;
+    private static final int       VIEW_DETECT_SHAPES		= 4;
+    private static final int       VIEW_SIGNS_RECOGNIZE		= 5;
 
     private int                    mViewMode;
     private Mat                    mRgba;
     private Mat                    mIntermediateMat;
     private Mat                    mGray;    
     
-    private MenuItem               mItemPreviewRGBA;
-    private MenuItem               mItemPreviewGray;
-    private MenuItem               mItemPreviewCanny;
-    private MenuItem               mItemPreviewDetectSigns;
+    private MenuItem               mItemHLSConversion;
+    private MenuItem               mItemColorExtraction;
+    private MenuItem               mItemCannyConversion;
+    private MenuItem               mItemErosionDilation;
+    private MenuItem               mItemDetectShapes;
+    private MenuItem               mItemSignsRecognize;
     private MenuItem               mItemPreviewResolution;
 
     private SubMenu mResolutionMenu;
@@ -61,7 +66,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
                     // Load native library after(!) OpenCV initialization
                     System.loadLibrary("sign_detector");
 
-                    mOpenCvCameraView.enableView();
+                    mOpenCvCameraView.enableView();                    
                 } break;
                 default:
                 {
@@ -86,16 +91,20 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 
         mOpenCvCameraView = (CameraView) findViewById(R.id.activity_surface_view);
         mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
-        mOpenCvCameraView.setCvCameraViewListener(this);       
+        mOpenCvCameraView.setCvCameraViewListener(this);
+        
+        mViewMode = VIEW_DETECT_SHAPES;
     }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         Log.i(TAG, "called onCreateOptionsMenu");
-        mItemPreviewRGBA = menu.add("Preview RGBA");
-        mItemPreviewGray = menu.add("Preview GRAY");
-        mItemPreviewCanny = menu.add("Canny");
-        mItemPreviewDetectSigns = menu.add("Detect Signs");
+        mItemHLSConversion = menu.add("HLS View");
+        mItemColorExtraction = menu.add("Color Exraction");
+        mItemCannyConversion = menu.add("Canny Conversion");
+        mItemErosionDilation = menu.add("Erosion Dilation");
+        mItemDetectShapes = menu.add("Detect Shapes");
+        mItemSignsRecognize = menu.add("Signs Recognize");
         
         mResolutionMenu = menu.addSubMenu("Resolution");
         mResolutionList = mOpenCvCameraView.getResolutionList();
@@ -103,12 +112,13 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 
         ListIterator<Size> resolutionItr = mResolutionList.listIterator();
         int idx = 0;
-        while(resolutionItr.hasNext()) {
-            Size element = resolutionItr.next();
-            mResolutionMenuItems[idx] = mResolutionMenu.add(1, idx, Menu.NONE,
-                    Integer.valueOf(element.width).toString() + "x" + Integer.valueOf(element.height).toString());
-            idx++;
-         }
+		while (resolutionItr.hasNext()) {
+			Size element = resolutionItr.next();
+			mResolutionMenuItems[idx] = mResolutionMenu.add(1, idx, Menu.NONE,
+					Integer.valueOf(element.width).toString() + "x"
+							+ Integer.valueOf(element.height).toString());
+			idx++;
+		}        
         
         return true;
     }
@@ -135,6 +145,27 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     }
 
     public void onCameraViewStarted(int width, int height) {
+    	Log.i(TAG, "called onCameraViewStarted");
+    	mResolutionList = mOpenCvCameraView.getResolutionList();
+    	
+    	if( mResolutionList != null && mResolutionList.size() > 0) {
+	    	Size resolution = mResolutionList.get(mResolutionList.size() - 1);
+	    	
+	    	for(int i=0;i<mResolutionList.size();i++) {
+	    		if( mResolutionList.get(i).width > 300 &&  mResolutionList.get(i).width < 400 ) {
+	    			resolution = mResolutionList.get(i);
+	    			break;
+	    		}
+	    	}
+	    	
+	        mOpenCvCameraView.setResolution(resolution);
+	        resolution = mOpenCvCameraView.getResolution();
+	        String caption = Integer.valueOf(resolution.width).toString() + "x" + Integer.valueOf(resolution.height).toString();
+	        Toast.makeText(this, caption, Toast.LENGTH_LONG).show();
+	        
+	        Log.i(TAG, "called onOptionsItemSelected: " + caption);
+    	}
+    	
         mRgba = new Mat(height, width, CvType.CV_8UC4);
         mIntermediateMat = new Mat(height, width, CvType.CV_8UC4);
         mGray = new Mat(height, width, CvType.CV_8UC1);
@@ -147,45 +178,26 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     }
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
-        final int viewMode = mViewMode;
-        switch (viewMode) {
-        case VIEW_MODE_GRAY:
-            // input frame has gray scale format
-            Imgproc.cvtColor(inputFrame.gray(), mRgba, Imgproc.COLOR_GRAY2RGBA, 4);
-            break;
-        case VIEW_MODE_RGBA:
-            // input frame has RBGA format
-            mRgba = inputFrame.rgba();
-            break;
-        case VIEW_MODE_CANNY:
-            // input frame has gray scale format
-            mRgba = inputFrame.rgba();
-            Imgproc.Canny(inputFrame.gray(), mIntermediateMat, 80, 100);
-            Imgproc.cvtColor(mIntermediateMat, mRgba, Imgproc.COLOR_GRAY2RGBA, 4);
-            break;
-	    case VIEW_MODE_DETECT_SIGNS:
-	        // input frame has RGBA format
-	        mRgba = inputFrame.rgba();
-	        
-	        //Imgproc.resize(mRgba, mRgba, Size(480, 270), 0, 0, INTER_CUBIC);	        
-	        DetectTrafficSigns(mRgba.getNativeObjAddr());
-	        break;
-	    }
-
+        mRgba = inputFrame.rgba();
+        DetectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode);
         return mRgba;
     }
 
     public boolean onOptionsItemSelected(MenuItem item) {
         Log.i(TAG, "called onOptionsItemSelected: selected item: " + item);
 
-        if (item == mItemPreviewRGBA) {
-            mViewMode = VIEW_MODE_RGBA;
-        } else if (item == mItemPreviewGray) {
-            mViewMode = VIEW_MODE_GRAY;
-        } else if (item == mItemPreviewCanny) {
-            mViewMode = VIEW_MODE_CANNY;            
-        } else if (item == mItemPreviewDetectSigns) {
-            mViewMode = VIEW_MODE_DETECT_SIGNS;
+        if (item == mItemHLSConversion) {
+            mViewMode = VIEW_HLS_CONVERSION;
+        } else if (item == mItemColorExtraction) {
+            mViewMode = VIEW_COLOR_EXTRACTION;
+        } else if (item == mItemCannyConversion) {
+            mViewMode = VIEW_CANNY_CONVERSION;            
+        } else if (item == mItemErosionDilation) {
+            mViewMode = VIEW_EROSION_DILATION;
+        } else if (item == mItemDetectShapes) {
+            mViewMode = VIEW_DETECT_SHAPES;
+        } else if (item == mItemSignsRecognize) {
+            mViewMode = VIEW_SIGNS_RECOGNIZE;
         } else {
         	Log.i(TAG, "called onOptionsItemSelected: selected item group id: " + item.getGroupId());
         	if( item.getGroupId() == 1 ) {        		
@@ -205,5 +217,5 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         return true;
     }
 
-    public native void DetectTrafficSigns(long matAddrRgba);
+    public native void DetectTrafficSigns(long matAddrRgba, int viewMode);
 }
