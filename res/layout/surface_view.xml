@@ -6,6 +6,7 @@
     <com.duvallsoftware.trafficsigndetector.CameraView
         android:layout_width="fill_parent"
         android:layout_height="fill_parent"
+        android:layout_gravity="top"
         android:id="@+id/activity_surface_view" />
 
 </LinearLayout>

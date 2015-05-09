@@ -5,8 +5,10 @@ import java.util.List;
 import org.opencv.android.JavaCameraView;
 
 import android.content.Context;
+import android.hardware.Camera;
 import android.hardware.Camera.Size;
 import android.util.AttributeSet;
+import android.util.Log;
 
 public class CameraView extends JavaCameraView {
 
@@ -24,10 +26,23 @@ public class CameraView extends JavaCameraView {
         disconnectCamera();
         mMaxHeight = resolution.height;
         mMaxWidth = resolution.width;
+        
         connectCamera(getWidth(), getHeight());
     }
 
     public Size getResolution() {
         return mCamera.getParameters().getPreviewSize();
     }
+    
+	public void setZoom(int zoom) {
+		Camera.Parameters parameters = mCamera.getParameters();		
+		if (parameters.isZoomSupported()) {
+			int maxZoom = parameters.getMaxZoom();
+			if (zoom >= 0 && zoom < maxZoom) {
+				parameters.setZoom(zoom);
+				mCamera.setParameters(parameters);
+			}
+		}
+		//super.setZoomValue(zoom);
+	}
 }

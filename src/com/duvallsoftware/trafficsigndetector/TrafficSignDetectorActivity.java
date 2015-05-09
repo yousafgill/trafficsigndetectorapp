@@ -1,5 +1,6 @@
 package com.duvallsoftware.trafficsigndetector;
 
+import java.io.File;
 import java.util.List;
 import java.util.ListIterator;
 
@@ -9,14 +10,15 @@ import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
-import org.opencv.imgproc.Imgproc;
-
 import android.app.Activity;
-import android.hardware.Camera.Parameters;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
 import android.hardware.Camera.Size;
+import android.media.MediaScannerConnection;
 import android.os.Bundle;
+import android.os.Environment;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -38,7 +40,10 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     private int                    mViewMode;
     private Mat                    mRgba;
     private Mat                    mIntermediateMat;
-    private Mat                    mGray;    
+    private Mat                    mGray;
+    
+    private boolean				   saveShapes;
+    private boolean				   showFPS;
     
     private MenuItem               mItemHLSConversion;
     private MenuItem               mItemColorExtraction;
@@ -48,11 +53,22 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     private MenuItem               mItemSignsRecognize;
     private MenuItem               mItemPreviewResolution;
     private MenuItem			   mItemTestFann;
+    private MenuItem			   mItemNoZoom;
+    private MenuItem			   mItemZoom2;
+    private MenuItem			   mItemZoom4;
+    private MenuItem			   mItemSaveShapes;
+    private MenuItem			   mItemShowFPS;
 
     private SubMenu mResolutionMenu;
     private MenuItem[] mResolutionMenuItems;
     
     private List<Size> mResolutionList;
+    
+    private SharedPreferences sharedpreferences;
+    private static final String zoomPref = "zoomKey";
+    private static final String saveShapesPref = "saveShapesKey";
+    private static final String showFPSPref = "showFPSKey";
+    
     
     private CameraView   mOpenCvCameraView;
 
@@ -96,20 +112,41 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         mOpenCvCameraView.setCvCameraViewListener(this);
         
         mViewMode = VIEW_DETECT_SHAPES;
+        
+        File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM);        
+        path = new File(path, "trafficsignsdetected");
+        if(!path.exists()) {
+        	path.mkdirs();
+        	// initiate media scan and put the new things into the path array to
+            // make the scanner aware of the location and the files you want to see
+            MediaScannerConnection.scanFile(this, new String[] {path.toString()}, null, null);
+        }
+        
+        sharedpreferences = getSharedPreferences("TrafficSignDetectionPrefs", Context.MODE_PRIVATE);        
     }
 
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-        Log.i(TAG, "called onCreateOptionsMenu");
-        mItemHLSConversion = menu.add("HLS View");
-        mItemColorExtraction = menu.add("Color Exraction");
-        mItemCannyConversion = menu.add("Canny Conversion");
-        mItemErosionDilation = menu.add("Erosion Dilation");
-        mItemDetectShapes = menu.add("Detect Shapes");
-        mItemSignsRecognize = menu.add("Signs Recognize");
-        mItemTestFann = menu.add("Fann Test");
+    public boolean onPrepareOptionsMenu(Menu menu) {
+        menu.clear();
+
+        Log.i(TAG, "called onPrepareOptionsMenu");
         
-        mResolutionMenu = menu.addSubMenu("Resolution");
+        mItemHLSConversion = menu.add(R.string.hls_view);
+        mItemColorExtraction = menu.add(R.string.color_extraction);
+        mItemCannyConversion = menu.add(R.string.canny_conversion);
+        mItemErosionDilation = menu.add(R.string.erosion_dilation);
+        mItemDetectShapes = menu.add(R.string.detect_shapes);
+        mItemSignsRecognize = menu.add(R.string.signs_recognize);
+        mItemTestFann = menu.add(R.string.fann_test);
+        
+        mItemNoZoom = menu.add(R.string.no_zoom);
+        mItemZoom2 = menu.add(R.string.zoom_2);
+        mItemZoom4 = menu.add(R.string.zoom_4);
+        
+        mItemSaveShapes = menu.add( (saveShapes ? R.string.disable_shapes_save : R.string.enable_shapes_save) );
+        mItemShowFPS = menu.add( (showFPS ? R.string.hide_fps : R.string.show_fps) );
+        
+        mResolutionMenu = menu.addSubMenu(R.string.resolution);
         mResolutionList = mOpenCvCameraView.getResolutionList();
         mResolutionMenuItems = new MenuItem[mResolutionList.size()];
 
@@ -121,7 +158,14 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 					Integer.valueOf(element.width).toString() + "x"
 							+ Integer.valueOf(element.height).toString());
 			idx++;
-		}        
+		}
+		
+        return super.onPrepareOptionsMenu(menu);
+    }
+    
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+    	Log.i(TAG, "called onCreateOptionsMenu");
         
         return true;
     }
@@ -138,7 +182,8 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     public void onResume()
     {
         super.onResume();
-        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_9, this, mLoaderCallback);
+        //OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_5, this, mLoaderCallback);
+        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
     }
 
     public void onDestroy() {
@@ -155,7 +200,16 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	    	Size resolution = mResolutionList.get(mResolutionList.size() - 1);
 	    	
 	    	for(int i=0;i<mResolutionList.size();i++) {
-	    		if( mResolutionList.get(i).width > 300 &&  mResolutionList.get(i).width < 400 ) {
+	    		// Resolution preferences: 480x360; 640x480; 3..x2..
+	    		if( mResolutionList.get(i).width == 480 ) {
+	    			resolution = mResolutionList.get(i);
+	    			break;
+	    		}
+	    		else if( mResolutionList.get(i).width == 640 ) {
+	    			resolution = mResolutionList.get(i);
+	    			break;
+	    		}
+	    		else if( mResolutionList.get(i).width > 300 &&  mResolutionList.get(i).width < 400 ) {
 	    			resolution = mResolutionList.get(i);
 	    			break;
 	    		}
@@ -172,6 +226,24 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         mRgba = new Mat(height, width, CvType.CV_8UC4);
         mIntermediateMat = new Mat(height, width, CvType.CV_8UC4);
         mGray = new Mat(height, width, CvType.CV_8UC1);
+        
+        // Only apply after camera was initialized because of zoom setting
+        applyPreferences();
+    }
+    
+    private void applyPreferences() {
+    	if (sharedpreferences.contains(zoomPref))
+        {
+           mOpenCvCameraView.setZoom(sharedpreferences.getInt(zoomPref, 2));
+        }
+    	if (sharedpreferences.contains(saveShapesPref))
+        {
+           saveShapes = sharedpreferences.getBoolean(saveShapesPref, true);
+        }
+    	if (sharedpreferences.contains(showFPSPref))
+        {
+           showFPS = sharedpreferences.getBoolean(showFPSPref, true);
+        }
     }
 
     public void onCameraViewStopped() {
@@ -180,15 +252,18 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         mIntermediateMat.release();
     }
 
-    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
-        mRgba = inputFrame.rgba();
-        DetectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode);
+    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {    	
+    	mRgba = inputFrame.rgba();
+        DetectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode, saveShapes, showFPS);
         return mRgba;
     }
 
     public boolean onOptionsItemSelected(MenuItem item) {
         Log.i(TAG, "called onOptionsItemSelected: selected item: " + item);
-
+        
+        // Open preferences for edition
+        Editor editor = sharedpreferences.edit();
+        
         if (item == mItemHLSConversion) {
             mViewMode = VIEW_HLS_CONVERSION;
         } else if (item == mItemColorExtraction) {
@@ -203,6 +278,21 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
             mViewMode = VIEW_SIGNS_RECOGNIZE;
         } else if (item == mItemTestFann) {
             testFann();
+        } else if (item == mItemNoZoom) {
+            mOpenCvCameraView.setZoom(1);            
+            editor.putInt(zoomPref, 1);
+        } else if (item == mItemZoom2) {
+            mOpenCvCameraView.setZoom(2);
+            editor.putInt(zoomPref, 2);
+        } else if (item == mItemZoom4) {
+        	mOpenCvCameraView.setZoom(4);
+        	editor.putInt(zoomPref, 4);
+        } else if (item == mItemSaveShapes) {
+        	saveShapes = !saveShapes;
+        	editor.putBoolean(saveShapesPref, saveShapes);
+        } else if (item == mItemShowFPS) {
+        	showFPS = !showFPS;
+        	editor.putBoolean(showFPSPref, showFPS);
         } else {
         	Log.i(TAG, "called onOptionsItemSelected: selected item group id: " + item.getGroupId());
         	if( item.getGroupId() == 1 ) {        		
@@ -218,10 +308,13 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	            Log.i(TAG, "called onOptionsItemSelected: " + caption);
         	}
         }
-
+        
+        // Save preferences
+        editor.commit();
+        
         return true;
     }
 
-    private static native void DetectTrafficSigns(long matAddrRgba, int viewMode);
+    private static native void DetectTrafficSigns(long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
     private static native void testFann();
 }

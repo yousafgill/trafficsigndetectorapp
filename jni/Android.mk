@@ -50,13 +50,14 @@ include $(BUILD_STATIC_LIBRARY)
 
 # MAIN Module FANN
 include $(CLEAR_VARS)
-include C:/Android/Development/OpenCV-2.4.10-android-sdk/sdk/native/jni/OpenCV.mk
+#include C:/Android/Development/OpenCV-2.4.10-android-sdk/sdk/native/jni/OpenCV.mk
+include C:/Android/Development/OpenCV-3.0-RC1-android-sdk/sdk/native/jni/OpenCV.mk
 
 LOCAL_MODULE    := sign_detector
 LOCAL_SRC_FILES := fann_test.cpp sign_detector.cpp
 #LOCAL_LDLIBS +=  -llog -ldl
 
-LOCAL_LDLIBS            += -lm -llog -landroid
+LOCAL_LDLIBS            += -lm -llog -landroid -l
 LOCAL_STATIC_LIBRARIES  += float-fann double-fann fixed-fann fann
 LOCAL_CFLAGS            += -std=c++11 -I$(LOCAL_PATH)/fann/include
 

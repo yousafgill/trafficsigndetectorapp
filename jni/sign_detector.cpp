@@ -3,8 +3,22 @@
  */
 #include <jni.h>
 #include <opencv2/opencv.hpp>
+#include <sstream>
+#include <android/log.h>
+#include <chrono>
+#include <limits.h>
+#include <sys/timeb.h>
+#include <fstream>
+#include <iostream>
 
+#define  LOG_TAG "SIGN DETECTOR JNI"
+#define  LOG(...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
+
+using namespace std;
 using namespace cv;
+using namespace std::chrono;
+
+#define DEBUG 1
 
 #define VIEW_HLS_CONVERSION 0
 #define VIEW_COLOR_EXTRACTION 1
@@ -13,28 +27,210 @@ using namespace cv;
 #define VIEW_DETECT_SHAPES 4
 #define VIEW_SIGNS_RECOGNIZE 5
 
-const float scaleFactor = 3.0f;
-Scalar circleColor(43, 215, 96);
-Scalar rectangleColor(204, 0, 102);
-Scalar triangleColor(255, 128, 0);
+#define NO_SIGN 0
+#define WARNING_SIGN 1
+#define FORBIDDEN_SIGN 2
+#define OBLIGATORY_SIGN 3
+#define INFORMATION_SIGN 4
+#define END_FORBIDDEN_SIGN 5 //not used
 
+#define SIGNAL_DETECTION_MESSAGE_TIMEOUT 3000
+
+const float scaleFactor = 1.0f;
+const int borderWidth = 2;
+
+const Scalar circleColor(43, 245, 96);
+const Scalar rectangleColor(204, 0, 102);
+const Scalar triangleColor(255, 128, 0);
+
+// current detected sign type
+int detected_sign_type = NO_SIGN;
+
+// frame counter
+long frameCounter = 0;
+
+long time_since_last_detection;
+    
 // Erode & Dilate to isolate segments connected to nearby areas
 cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(1, 1), cv::Point(0,0));
+
+float CLOCK()
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC,  &t);
+    return (t.tv_sec * 1000)+(t.tv_nsec*1e-6);
+}
+
+float _avgdur=0;
+float _fpsstart=0;
+float _avgfps=0;
+float _fps1sec=0;
+
+float avgdur(float newdur)
+{
+    _avgdur=0.98*_avgdur+0.02*newdur;
+    return _avgdur;
+}
+
+float avgfps()
+{
+    if(CLOCK()-_fpsstart>1000)      
+    {
+        _fpsstart=CLOCK();
+        _avgfps=0.7*_avgfps+0.3*_fps1sec;
+        _fps1sec=0;
+    }
+    _fps1sec++;
+    return _avgfps;
+}
 
 /**
  * Helper function to find a cosine of angle between vectors
  * from pt0->pt1 and pt0->pt2
  */
-static double angle(cv::Point pt1, cv::Point pt2, cv::Point pt0)
+static float angle(cv::Point pt1, cv::Point pt2, cv::Point pt0)
 {
-	double dx1 = pt1.x - pt0.x;
-	double dy1 = pt1.y - pt0.y;
-	double dx2 = pt2.x - pt0.x;
-	double dy2 = pt2.y - pt0.y;
+	float dx1 = pt1.x - pt0.x;
+	float dy1 = pt1.y - pt0.y;
+	float dx2 = pt2.x - pt0.x;
+	float dy2 = pt2.y - pt0.y;
 	return (dx1*dx2 + dy1*dy2)/sqrt((dx1*dx1 + dy1*dy1)*(dx2*dx2 + dy2*dy2) + 1e-10);
 }
 
-void findShapes(cv::Mat frame, cv::Mat canny) {
+void setDetectedSignType(int sign_type) {
+	// Get current time in milliseconds
+	milliseconds ms = duration_cast< milliseconds >(
+    	high_resolution_clock::now().time_since_epoch()
+	);
+	
+	time_since_last_detection = ms.count();
+
+	detected_sign_type = sign_type;
+}
+
+void get64x64ImagefromRectangle(cv::Mat *origFrame, cv::Mat *dst, cv::Rect rect) {
+	cv::Mat& frame = *(Mat*)origFrame;
+	
+	try {
+		(*(Mat*)dst) =  frame(rect);
+	
+		// Increase the rectangle size by X pixels to capture all sign
+		const int incPixels = 12;
+		if ( (rect.x - incPixels / 2 + rect.width + incPixels) <= frame.cols &&
+				(rect.y - incPixels / 2 + rect.height + incPixels) <= frame.rows &&
+					(rect.x - (incPixels/2)) >= 0 && (rect.y - (incPixels/2)) >= 0 ) {
+			rect.height += incPixels;
+			rect.width += incPixels;
+			rect.x -= (incPixels/2);
+			rect.y -= (incPixels/2);
+		}
+			
+		// Crop frame from rectangle parameters
+		cv::Mat miniMat = frame(rect);
+
+		// Create 64x64 pixel empty Image		
+		cv::Mat mIntermediateMat(64, 64, CV_8UC3, Scalar(0,0,0));
+		
+		// resize frame to 64x64 pixels
+		resize(miniMat, mIntermediateMat, mIntermediateMat.size(), 0, 0, INTER_CUBIC);
+		(*(Mat*)dst) =  mIntermediateMat;
+		
+	} catch(std::exception& ex) {
+		LOG("Exception resizing detected image: %s\n", ex.what());
+	}
+}
+
+void writeShapeFound(cv::Mat* image) {
+	std::ostringstream shapeFileName;
+
+	vector<int> compression_params;
+	compression_params.push_back(CV_IMWRITE_JPEG_QUALITY);
+	compression_params.push_back(95);
+
+	try {
+		// Get frame processing time
+		milliseconds ms = duration_cast< milliseconds >(
+		    high_resolution_clock::now().time_since_epoch()
+		);
+		
+		// Detected image name
+		shapeFileName.clear();
+		shapeFileName.str("");
+		shapeFileName << "/mnt/sdcard/DCIM/trafficsignsdetected/sign_" << ms.count() << ".jpeg";
+		
+#ifdef DEBUG
+		LOG("Saving image %s\n", shapeFileName.str().c_str());
+#endif
+		
+		bool res = cv::imwrite(shapeFileName.str(), *(Mat*)image, compression_params);
+
+#ifdef DEBUG
+		if( !res ) {
+			LOG("Failed to write image %s to SDCard\n", shapeFileName.str().c_str());
+		}
+		else {
+			LOG("Successfuly wrote image %s to SDCard\n", shapeFileName.str().c_str());
+		}
+#endif
+	}
+	catch (std::exception& ex) {
+		LOG("Exception saving image %s to SDCard: %s\n", shapeFileName.str().c_str(), ex.what());
+	}
+}
+
+void writeShapeFound(cv::Mat* frame, cv::Rect rect) {	
+	cv::Mat image;
+	get64x64ImagefromRectangle(frame, &image, rect);
+		
+	// Convert to original BGR color
+	cv::cvtColor(image , image , CV_RGBA2BGR);
+	    
+	writeShapeFound(&image);
+}
+
+// Blue obligatory traffic signs have a great percentage of blue color
+// so it's easier to test them instead of the red forbidden traffic signs
+bool imageIsBlueColored(cv::Mat * origImage) {
+	cv::Mat& image = *(Mat*)origImage;
+	
+	const int colorBlueRangesCount = 4;
+
+	cv::Scalar colorRanges[colorBlueRangesCount][2] = {
+		{ cv::Scalar(100, 63, 166), cv::Scalar(132, 103, 255) }, //BLUE
+		{ cv::Scalar(100, 105, 105), cv::Scalar(132, 170, 180) }, //BLUE
+		{ cv::Scalar(100, 105, 106), cv::Scalar(132, 170, 255) }, //BLUE
+		{ cv::Scalar(100, 30, 204), cv::Scalar(132, 170, 255) } //BLUE
+	};
+	
+	cv::Mat resultMat;
+	
+	// Convert the image from RGBA into an HLS image
+	cv::cvtColor(image , image , CV_RGBA2RGB);
+	cv::cvtColor(image, image, CV_RGB2HLS);		
+	
+	cv::Mat tempMat[colorBlueRangesCount];
+	
+	for (int i = 0; i < colorBlueRangesCount; i++) {
+		cv::inRange(image, colorRanges[i][0], colorRanges[i][1], tempMat[i]);
+		if (i == 0) {
+			resultMat = tempMat[0];
+		}
+		else {
+			resultMat |= tempMat[i];
+		}
+	}
+	
+	float image_size = (image.cols * image.rows);
+	float blue_percent = ((float) cv::countNonZero(resultMat))/image_size;
+	
+#ifdef DEBUG
+	LOG("IMAGE BLUE PERCENTAGE: %f", blue_percent);
+#endif
+	
+	return (blue_percent > 0.15);
+}
+
+void findShapes(cv::Mat origFrame, cv::Mat frame, cv::Mat canny, bool saveShapes) {
 	// Find contours
 	std::vector<std::vector<cv::Point> > contours;
 	std::vector<Vec4i> hierarchy;
@@ -49,6 +245,11 @@ void findShapes(cv::Mat frame, cv::Mat canny) {
 
 	for (int i = 0; i < contours.size(); i++)
 	{
+		// XXX: TEST THIS - Ignore countours which are child of other contours
+		if (hierarchy[i][3] != -1) {
+			continue;
+		}		
+		
 		// Approximate contour with accuracy proportional to the contour perimeter
 		cv::approxPolyDP(cv::Mat(contours[i]), approx, cv::arcLength(cv::Mat(contours[i]), true)*0.035, true);
 
@@ -61,17 +262,23 @@ void findShapes(cv::Mat frame, cv::Mat canny) {
 		if (boundRect[i].width > 60 || boundRect[i].height > 60 || (boundRect[i].width > (2 * boundRect[i].height)) || ((2 * boundRect[i].width) < boundRect[i].height))
 			continue;
 
+		// Triangle
 		if (approx.size() == 3)
 		{
-			rectangle(frame, boundRect[i].tl(), boundRect[i].br(), triangleColor, 2, 8, 0);
+			setDetectedSignType(WARNING_SIGN);
+			rectangle(origFrame, boundRect[i].tl(), boundRect[i].br(), triangleColor, 2, 8, 0);
+			if(saveShapes) {
+				writeShapeFound(&frame, boundRect[i]);
+			}
 		}
+		// Rectangle
 		else if (approx.size() >= 4 && approx.size() <= 6)
 		{
 			// Number of vertices of polygonal curve
 			size_t vtc = approx.size();
 
 			// Get the cosines of all corners
-			std::vector<double> cos;
+			std::vector<float> cos;
 			for (int j = 2; j < vtc + 1; j++)
 				cos.push_back(angle(approx[j%vtc], approx[j - 2], approx[j - 1]));
 
@@ -79,13 +286,17 @@ void findShapes(cv::Mat frame, cv::Mat canny) {
 			std::sort(cos.begin(), cos.end());
 
 			// Get the lowest and the highest cosine
-			double mincos = cos.front();
-			double maxcos = cos.back();
+			float mincos = cos.front();
+			float maxcos = cos.back();
 
 			// Use the degrees obtained above and the number of vertices
 			// to determine the shape of the contour
 			if (vtc == 4 && mincos >= -0.1 && maxcos <= 0.3) {
-				rectangle(frame, boundRect[i].tl(), boundRect[i].br(), rectangleColor, 3, 8, 0);
+				setDetectedSignType(INFORMATION_SIGN);
+				rectangle(origFrame, boundRect[i].tl(), boundRect[i].br(), rectangleColor, 3, 8, 0);
+				if(saveShapes) {
+					writeShapeFound(&frame, boundRect[i]);
+				}
 			}
 		}
 		else
@@ -96,36 +307,69 @@ void findShapes(cv::Mat frame, cv::Mat canny) {
 			cv::Rect r = cv::boundingRect(contours[i]);
 			int radius = r.width / 2;
 
-			if (std::abs(1 - ((double)r.width / r.height)) <= 0.2 &&
+			cv::Mat mCircle;
+			get64x64ImagefromRectangle(&frame, &mCircle, r);
+			if( imageIsBlueColored(&mCircle)) {
+				setDetectedSignType(OBLIGATORY_SIGN);
+			} else {
+				setDetectedSignType(FORBIDDEN_SIGN);
+			}
+			
+			if (std::abs(1 - ((float)r.width / r.height)) <= 0.2 &&
 				std::abs(1 - (cv::contourArea(contours[i]) / (CV_PI * std::pow(radius, 2)))) <= 0.2) {
-				circle(frame, center[i], (int)contourRadius[i], circleColor, 4, 8, 0);
+				circle(origFrame, center[i], (int)contourRadius[i], circleColor, 4, 8, 0);
 			}
 			else {
-				circle(frame, center[i], (int)contourRadius[i], circleColor, 4, 8, 0);
+				circle(origFrame, center[i], (int)contourRadius[i], circleColor, 4, 8, 0);
+			}
+			
+			if(saveShapes) {							    
+				// Save shapes on SDCard for later analysis
+				writeShapeFound(&frame, r);				
 			}
 		}
 	}
 }
 
 extern "C" {
-	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns(JNIEnv*, jobject, jlong addrRgba, jint option);
+	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
+									(JNIEnv*, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS);
 	
-	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns(JNIEnv*, jobject, jlong addrRgba, jint option) {
-		Mat& frame = *(Mat*)addrRgba;
+	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
+									(JNIEnv*, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
+		// Initialized fps clock
+		float start = CLOCK();
+
+        if( frameCounter == LONG_MAX - 1 )
+        	frameCounter = 0;
+        
+		cv::Mat& origFrame = *(Mat*)addrRgba;
+		
+		cv::Mat frame = origFrame.clone();		
 		cv::Mat tempMat, resultMat;		
+		
+		const int frameH = frame.size().height;
+		const int frameW = frame.size().width;
+		
+		// Clear unmonitored area
+		rectangle(frame, cv::Point(0, 0), cv::Point((frameW / 4), frameH), Scalar(0, 0, 0), -1, 8, 0);
+		rectangle(frame, cv::Point(0, frameH - (frameH / 4)), cv::Point(frameW, frameH), Scalar(0, 0, 0), -1, 8, 0);
+		
+		// Display monitored area
+		rectangle(origFrame, cv::Point(frameW / 4, 0), cv::Point(frameW - borderWidth/2, frameH - (frameH / 4)), Scalar(127, 127, 127), borderWidth, 8, 0);
 		
 		const int NUM_RANGES = 7;
 		cv::Mat colorRangesMat[NUM_RANGES];
 	
 		cv::Scalar colorRanges[NUM_RANGES][2] = {
-			{ cv::Scalar(0, 30, 50), cv::Scalar(13, 215, 255) }, //RED
-			{ cv::Scalar(170, 30, 50), cv::Scalar(180, 215, 255) }, //RED
+			{ cv::Scalar(0, 40, 50), cv::Scalar(10, 195, 255) }, //RED
+			{ cv::Scalar(170, 30, 50), cv::Scalar(180, 195, 255) }, //RED
 			{ cv::Scalar(110, 24, 24), cv::Scalar(153, 62, 85) }, //RED
-	
-			{ cv::Scalar(100, 63, 166), cv::Scalar(110, 103, 255) }, //BLUE
-			{ cv::Scalar(98, 105, 105), cv::Scalar(106, 134, 180) }, //BLUE
-			{ cv::Scalar(96, 105, 106), cv::Scalar(106, 166, 255) }, //BLUE
-			{ cv::Scalar(103, 26, 204), cv::Scalar(116, 91, 255) } //BLUE
+
+			{ cv::Scalar(100, 63, 166), cv::Scalar(132, 103, 255) }, //BLUE
+			{ cv::Scalar(100, 105, 105), cv::Scalar(132, 170, 180) }, //BLUE
+			{ cv::Scalar(100, 105, 106), cv::Scalar(132, 170, 255) }, //BLUE
+			{ cv::Scalar(100, 30, 204), cv::Scalar(132, 170, 255) } //BLUE
 		};
 	
 		// Convert the image from RGBA into an HLS image
@@ -133,7 +377,7 @@ extern "C" {
 		cv::cvtColor(tempMat, tempMat, CV_RGB2HLS);
 		
 		if( option == VIEW_HLS_CONVERSION ) {
-			frame = tempMat;
+			origFrame = tempMat;
 			return;
 		}
 	
@@ -148,7 +392,7 @@ extern "C" {
 		}
 	
 		if( option == VIEW_COLOR_EXTRACTION ) {
-			frame = resultMat;
+			origFrame = resultMat;
 			return;
 		}
 		
@@ -157,18 +401,69 @@ extern "C" {
 		cv::Canny(tempMat, resultMat, 0.3, 2, 3);
 	
 		if( option == VIEW_CANNY_CONVERSION ) {
-			frame = resultMat;
+			origFrame = resultMat;
 			return;
 		}
 		
-		cv::erode(resultMat, tempMat, element);
-		cv::dilate(tempMat, resultMat, element);
+		// Open seems to be equivelent to erode and dilate but faster XXX: TB CONFIRMED
+		// http://docs.opencv.org/doc/tutorials/imgproc/opening_closing_hats/opening_closing_hats.html#opening
+		cv::morphologyEx(resultMat, resultMat, MORPH_OPEN, element);
+		
+		//cv::erode(resultMat, tempMat, element);
+		//cv::dilate(tempMat, resultMat, element);
 	
 		if( option == VIEW_EROSION_DILATION ) {
-			frame = resultMat;
+			origFrame = resultMat;
 			return;
 		}
 		
-		findShapes(frame, resultMat);
+		if( detected_sign_type != NO_SIGN ) {
+			// Get current time in milliseconds
+			milliseconds ms = duration_cast< milliseconds >(
+		    	high_resolution_clock::now().time_since_epoch()
+			);
+			
+			LOG("TIME_SINCE_LAST_DETECTION: %ld", time_since_last_detection);
+			LOG("CURRENT TIME: %ld", (long)ms.count());
+			
+			// 5 seconds after rhe last detectd sign set the detection to NO_SIGN
+			if( ((long)ms.count() - time_since_last_detection) > SIGNAL_DETECTION_MESSAGE_TIMEOUT ) {
+				detected_sign_type = NO_SIGN;
+			}
+		}
+		
+		findShapes(origFrame, frame, resultMat, saveShapes);		
+		
+		if( detected_sign_type != NO_SIGN ) {
+			ostringstream detectedSign("");
+			
+			switch(detected_sign_type) {
+				case WARNING_SIGN:
+					detectedSign << "WARNING";
+					break;
+				case FORBIDDEN_SIGN:
+					detectedSign << "FORBIDDEN";
+					break;
+				case OBLIGATORY_SIGN:
+					detectedSign << "OBLIGATORY";
+					break;
+				case INFORMATION_SIGN:
+					detectedSign << "INFORMATION";
+					break;
+				case END_FORBIDDEN_SIGN:
+					detectedSign << "END FORBIDDEN";
+					break;				
+			}
+			
+			cv::putText(origFrame, detectedSign.str().c_str(), cvPoint(5,35), FONT_HERSHEY_PLAIN, 1.25, CV_RGB(255,0,0), 1.25);
+		}
+        
+        if( showFPS ) {
+        	float dur = CLOCK()- start;        
+	        float avgfpsF = avgfps();
+	        ostringstream avgfps("");
+	    	avgfps << "FPS: " << avgfpsF;
+	        cv::putText(origFrame, avgfps.str().c_str(), cvPoint(5,15), FONT_HERSHEY_PLAIN, 1.0, CV_RGB(0,0,255), 1.0);
+        }
 	}
 }
