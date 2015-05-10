@@ -1,6 +1,7 @@
 package com.duvallsoftware.trafficsigndetector;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import java.util.ListIterator;
 
@@ -8,8 +9,13 @@ import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
+import org.opencv.core.Rect;
+import org.opencv.core.Scalar;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.Imgproc;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import android.app.Activity;
 import android.content.Context;
@@ -29,6 +35,12 @@ import android.widget.Toast;
 
 public class TrafficSignDetectorActivity extends Activity implements CvCameraViewListener2 {
     private static final String    TAG = "TrafficSignsDetector::Activity";
+    
+    private static final int       NO_SIGN					= 0;
+    private static final int       WARNING_SIGN				= 1;
+    private static final int       FORBIDDEN_SIGN			= 2;
+    private static final int       OBLIGATORY_SIGN			= 3;
+    private static final int       INFORMATION_SIGN			= 4;
     
     private static final int       VIEW_HLS_CONVERSION		= 0;
     private static final int       VIEW_COLOR_EXTRACTION	= 1;
@@ -286,7 +298,41 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {    	
     	mRgba = inputFrame.rgba();
-        DetectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode, saveShapes, showFPS);
+        int detected_sign = DetectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode, saveShapes, showFPS);
+        //Log.i(TAG, "Detected Sign: " + detected_sign);
+        if( detected_sign > NO_SIGN ) {
+        	int imageSrcID = -1;
+        	switch(detected_sign) {
+        	case WARNING_SIGN:
+        		imageSrcID = R.drawable.warning;
+        		break;
+        	case FORBIDDEN_SIGN:
+        		imageSrcID = R.drawable.forbidden;
+        		break;
+        	case OBLIGATORY_SIGN:
+        		imageSrcID = R.drawable.obligatory;
+        		break;
+        	case INFORMATION_SIGN:
+        		imageSrcID = R.drawable.information;
+        		break;
+        	}
+        	
+        	if( imageSrcID >= 0 ) {
+				try {
+					// Images are 144 x 144 pixels
+					int imgWidth = 144;
+	        		int x = 20;
+	        		int y = mRgba.rows() - imgWidth - 20;
+	        			        			        		
+		        	Mat image = Utils.loadResource(getApplicationContext(), imageSrcID);
+		        	Mat imageDst = new Mat();
+		        	Imgproc.cvtColor(image, imageDst, Imgproc.COLOR_BGRA2RGBA);
+		        	imageDst.copyTo(mRgba.colRange(x, x + imgWidth).rowRange(y, y + imgWidth));
+				} catch (Exception e) {
+					Log.i(TAG, "Exception: " + e.getMessage());
+				}	        	
+        	}
+        }
         return mRgba;
     }
 
@@ -347,6 +393,6 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         return true;
     }
 
-    private static native void DetectTrafficSigns(long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
+    private static native int DetectTrafficSigns(long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
     private static native void testFann();
 }
