@@ -75,7 +75,9 @@ long frameCounter = 0;
 long time_since_last_detection;
     
 // Erode & Dilate to isolate segments connected to nearby areas
-cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(1, 1), cv::Point(0,0));
+const cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(1, 1), cv::Point(0,0));
+
+const char* saveFilesPath = NULL;
 
 float CLOCK()
 {
@@ -131,32 +133,30 @@ void setDetectedSignType(int sign_type) {
 	detected_sign_type = sign_type;
 }
 
-void get64x64ImagefromRectangle(cv::Mat *previewFrame, cv::Mat *dst, cv::Rect rect) {
+void getFixedSizeImagefromRectangle(cv::Mat *previewFrame, cv::Mat *dst, cv::Rect rect) {
 	cv::Mat& frame = *(Mat*)previewFrame;
 	
-	try {
-		(*(Mat*)dst) =  frame(rect);
+	// Use 48 pixels for fixed size image
+	const int fixedSize = 48;
 	
-		// Increase the rectangle size by X pixels to capture all sign
-		const int incPixels = 12;
+	try {		
+		if (rect.x + rect.width > frame.cols)
+			rect.x = abs(frame.cols - rect.width);
 		
-		if ( (rect.x - incPixels / 2 + rect.width + incPixels) <= frame.cols &&
-				(rect.y - incPixels / 2 + rect.height + incPixels) <= frame.rows &&
-					(rect.x - (incPixels/2)) >= 0 && (rect.y - (incPixels/2)) >= 0 ) {
-			rect.height += incPixels;
-			rect.width += incPixels;
-			rect.x -= (incPixels/2);
-			rect.y -= (incPixels/2);
-		}
-			
+		if (rect.y + rect.height > frame.rows)
+			rect.y = abs(frame.rows - rect.height);
+		
 		// Crop frame from rectangle parameters
 		cv::Mat miniMat = frame(rect);
 
-		// Create 64x64 pixel empty Image		
-		cv::Mat mIntermediateMat(64, 64, CV_8UC3, Scalar(0,0,0));
+		// Create fixed size pixel empty Image		
+		cv::Mat mIntermediateMat(fixedSize, fixedSize, CV_8UC3, Scalar(0,0,0));
 		
-		// resize frame to 64x64 pixels
+		// resize frame
 		resize(miniMat, mIntermediateMat, mIntermediateMat.size(), 0, 0, INTER_CUBIC);
+		
+		// release resources
+		miniMat.release();
 		(*(Mat*)dst) =  mIntermediateMat;
 	} catch(std::exception& ex) {
 		LOG("Exception resizing detected image: %s\n", ex.what());
@@ -164,8 +164,9 @@ void get64x64ImagefromRectangle(cv::Mat *previewFrame, cv::Mat *dst, cv::Rect re
 }
 
 void writeShapeFound(cv::Mat* image) {
-	std::ostringstream shapeFileName;
-
+	if( saveFilesPath == NULL )
+		return;
+		
 	vector<int> compression_params;
 	compression_params.push_back(CV_IMWRITE_JPEG_QUALITY);
 	compression_params.push_back(95);
@@ -177,14 +178,12 @@ void writeShapeFound(cv::Mat* image) {
 		);
 		
 		// Detected image name
-		shapeFileName.clear();
-		shapeFileName.str("");
-		shapeFileName << "/mnt/sdcard/Downloads/trafficsignsdetected/sign_" << ms.count() << ".jpeg";
+		std::ostringstream shapeFileName("");
+		shapeFileName << saveFilesPath << "/trafficsignsdetected/sign_" << ms.count() << ".jpeg";
 		
 		LOG("Saving image %s\n", shapeFileName.str().c_str());
 		
 		bool res = cv::imwrite(shapeFileName.str(), *(Mat*)image, compression_params);
-
 		if( !res ) {
 			LOG("Failed to write image %s to SDCard\n", shapeFileName.str().c_str());
 		}
@@ -193,13 +192,13 @@ void writeShapeFound(cv::Mat* image) {
 		}
 	}
 	catch (std::exception& ex) {
-		LOG("Exception saving image %s to SDCard: %s\n", shapeFileName.str().c_str(), ex.what());
+		LOG("Exception saving image to SDCard: %s\n", ex.what());
 	}
 }
 
 void writeShapeFound(cv::Mat* frame, cv::Rect rect) {	
 	cv::Mat image;
-	get64x64ImagefromRectangle(frame, &image, rect);
+	getFixedSizeImagefromRectangle(frame, &image, rect);
 		
 	// Convert to original BGR color
 	cv::cvtColor(image , image , CV_RGBA2BGR);
@@ -236,7 +235,12 @@ bool imageIsBlueColored(cv::Mat * origImage) {
 	float image_size = (image.cols * image.rows);
 	float blue_percent = ((float) cv::countNonZero(resultMat))/image_size;
 	
-	LOG("IMAGE BLUE PERCENTAGE: %f", blue_percent);
+	//LOG("IMAGE BLUE PERCENTAGE: %f", blue_percent);
+	
+	resultMat.release();
+	for (int i = 0; i < colorBlueRangesCount; i++) {
+		tempMat[i].release();
+	}
 	
 	return (blue_percent > 0.15);
 }
@@ -256,7 +260,7 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 
 	for (int i = 0; i < contours.size(); i++)
 	{
-		// XXX: TEST THIS - Ignore countours which are child of other contours
+		// TODO: TEST THIS PROPERLY - Ignore countours which are child of other contours
 		if (hierarchy[i][3] != -1) {
 			continue;
 		}		
@@ -321,6 +325,7 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 		}
 		else
 		{
+			// Calculate the minimum circle which defines the shape contour
 			cv::minEnclosingCircle(approx, center[i], contourRadius[i]);
 			
 			// Adjust the center of the countour shape with the scale factor value
@@ -331,7 +336,7 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 			cv::Rect r = cv::boundingRect(contours[i]);
 			
 			cv::Mat mCircle;
-			get64x64ImagefromRectangle(&frame, &mCircle, r);
+			getFixedSizeImagefromRectangle(&frame, &mCircle, r);
 			
 			// Adjust the bounding rectangle dimensions and position with the scale factor value
 			r.height = (r.height * inverseScaleFactor);
@@ -357,8 +362,11 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 			
 			if(saveShapes) {							    
 				// Save shapes on SDCard for later analysis
-				writeShapeFound(&frame, r);				
+				// Use the boundingRect since r is already set with the inverted scale factor
+				writeShapeFound(&frame, (cv::Rect)cv::boundingRect(contours[i]));				
 			}
+			
+			mCircle.release();
 		}
 	}
 }
@@ -378,13 +386,31 @@ bool isResolutionChanged(int currentWidth) {
 }
 
 extern "C" {
-	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
-									(JNIEnv*, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS);
+	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
+									(JNIEnv* env, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS);
 	
-	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
-									(JNIEnv*, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
+	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
+									(JNIEnv* env, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
 		// Initialized fps clock
 		float start = CLOCK();
+
+		// Set the path where we should store the saved image files
+		// Downloads/trafficsigns_detected shall be used for now
+		if( saveShapes && saveFilesPath == NULL ) {
+			jclass envClass = env->FindClass("android/os/Environment");
+			jfieldID fieldId = env->GetStaticFieldID(envClass, "DIRECTORY_DOWNLOADS", "Ljava/lang/String;");
+			jstring jstrParam = (jstring)env->GetStaticObjectField(envClass, fieldId);
+
+			jmethodID getExtStorageDirectoryMethod = env->GetStaticMethodID(envClass, "getExternalStoragePublicDirectory",  "(Ljava/lang/String;)Ljava/io/File;");
+			jobject extStorageFile = env->CallStaticObjectMethod(envClass, getExtStorageDirectoryMethod, jstrParam);
+			jclass fileClass = env->FindClass("java/io/File");
+			jmethodID getPathMethod = env->GetMethodID(fileClass, "getPath", "()Ljava/lang/String;");
+			jstring extStoragePath = (jstring)env->CallObjectMethod(extStorageFile, getPathMethod);
+			
+			saveFilesPath = env->GetStringUTFChars(extStoragePath,NULL);
+			
+			LOG("DOWNLOADS DIRECTORY: %s", saveFilesPath);
+		}
 
         if( frameCounter == LONG_MAX - 1 )
         	frameCounter = 0;
@@ -423,7 +449,12 @@ extern "C" {
 		
 		if( option == VIEW_HLS_CONVERSION ) {
 			cv::resize(tempMat, previewFrame, Size(0,0), inverseScaleFactor, inverseScaleFactor);
-			return;
+			
+			frame.release();
+			tempMat.release();
+			resultMat.release();
+			
+			return NO_SIGN;
 		}
 	
 		for (int i = 0; i < NUM_RANGES; i++) {
@@ -438,7 +469,12 @@ extern "C" {
 	
 		if( option == VIEW_COLOR_EXTRACTION ) {
 			cv::resize(resultMat, previewFrame, Size(0,0), inverseScaleFactor, inverseScaleFactor);
-			return;
+			
+			frame.release();
+			tempMat.release();
+			resultMat.release();
+			
+			return NO_SIGN;
 		}
 		
 		// Blur the gray image
@@ -447,16 +483,27 @@ extern "C" {
 	
 		if( option == VIEW_CANNY_CONVERSION ) {
 			cv::resize(resultMat, previewFrame, Size(0,0), inverseScaleFactor, inverseScaleFactor);
-			return;
+			
+			frame.release();
+			tempMat.release();
+			resultMat.release();
+			
+			return NO_SIGN;
 		}
 		
-		// Open seems to be equivelent to erode and dilate but faster XXX: TB CONFIRMED
+		// TODO: CONFIRM THIS
+		// Open seems to be equivelent to erode and dilate but faster
 		// http://docs.opencv.org/doc/tutorials/imgproc/opening_closing_hats/opening_closing_hats.html#opening
 		cv::morphologyEx(resultMat, resultMat, MORPH_OPEN, element);
 	
 		if( option == VIEW_EROSION_DILATION ) {
 			cv::resize(resultMat, previewFrame, Size(0,0), inverseScaleFactor, inverseScaleFactor);
-			return;
+			
+			frame.release();
+			tempMat.release();
+			resultMat.release();
+			
+			return NO_SIGN;
 		}
 		
 		if( detected_sign_type != NO_SIGN ) {
@@ -471,31 +518,7 @@ extern "C" {
 			}
 		}
 		
-		findShapes(previewFrame, frame, resultMat, saveShapes);		
-		
-		if( detected_sign_type != NO_SIGN ) {
-			ostringstream detectedSign("");
-			
-			switch(detected_sign_type) {
-				case WARNING_SIGN:
-					detectedSign << "WARNING";
-					break;
-				case FORBIDDEN_SIGN:
-					detectedSign << "FORBIDDEN";
-					break;
-				case OBLIGATORY_SIGN:
-					detectedSign << "OBLIGATORY";
-					break;
-				case INFORMATION_SIGN:
-					detectedSign << "INFORMATION";
-					break;
-				case END_FORBIDDEN_SIGN:
-					detectedSign << "END FORBIDDEN";
-					break;				
-			}
-			
-			cv::putText(previewFrame, detectedSign.str().c_str(), cvPoint(5,35), FONT_HERSHEY_PLAIN, 1.25, CV_RGB(255,0,0), 1.25);
-		}
+		findShapes(previewFrame, frame, resultMat, saveShapes);			
         
         if( showFPS ) {
         	float dur = CLOCK()- start;        
@@ -504,5 +527,12 @@ extern "C" {
 	    	avgfps << "FPS: " << avgfpsF;
 	        cv::putText(previewFrame, avgfps.str().c_str(), cvPoint(5,15), FONT_HERSHEY_PLAIN, 1.0, CV_RGB(0,0,255), 1.0);
         }
+        
+        // Release resources
+        frame.release();
+		tempMat.release();
+		resultMat.release();					
+		
+		return detected_sign_type;
 	}
 }
