@@ -17,6 +17,8 @@
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
 
+#include <android/log.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -29,6 +31,9 @@
 #define vsnprintf _vsnprintf
 #define snprintf _snprintf
 #endif
+
+#define  LOG_TAG "FANN TEST"
+#define  LOG(...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
 
 FILE * fann_default_error_log = (FILE *)-1;
 
@@ -84,6 +89,7 @@ FANN_EXTERNAL void FANN_API fann_print_error(struct fann_error *errdat)
 	if(errdat->errno_f != FANN_E_NO_ERROR && errdat->errstr != NULL)
 	{
 		fprintf(stderr, "FANN Error %d: %s", errdat->errno_f, errdat->errstr);
+		LOG("FANN Error %d: %s", errdat->errno_f, errdat->errstr);
 	}
 }
 
@@ -109,6 +115,7 @@ void fann_error(struct fann_error *errdat, const enum fann_errno_enum errno_f, .
 		if(errstr == NULL)
 		{
 			fprintf(stderr, "Unable to allocate memory.\n");
+			LOG("Unable to allocate memory.\n");
 			return;
 		}
 	}
@@ -192,10 +199,12 @@ void fann_error(struct fann_error *errdat, const enum fann_errno_enum errno_f, .
 	if(error_log == (FILE *)-1) /* This is the default behavior and will give stderr */
 	{
 		fprintf(stderr, "FANN Error %d: %s", errno_f, errstr);
+		LOG("FANN Error %d: %s", errno_f, errstr);
 	}
 	else if(error_log != NULL)
 	{
 		fprintf(error_log, "FANN Error %d: %s", errno_f, errstr);
+		LOG("FANN Error %d: %s", errno_f, errstr);
 	}
 }
 

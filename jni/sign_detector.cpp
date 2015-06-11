@@ -1,46 +1,19 @@
 /**
  * Traffic Signs Detector
  */
-#include <jni.h>
-#include <opencv2/opencv.hpp>
-#include <sstream>
-#include <android/log.h>
-#include <chrono>
-#include <limits.h>
-#include <sys/timeb.h>
-#include <fstream>
-#include <iostream>
+#include "sign_detector.h"
 
-#define DEBUG 1
+const float DETECT_THRESHOLD = 0.8f;
 
-#define  LOG_TAG "SIGN DETECTOR JNI"
-#ifdef DEBUG
-#define  LOG(...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
-#else
-#define  LOG(...)
-#endif
-
-using namespace std;
-using namespace cv;
-using namespace std::chrono;
-
-#define VIEW_HLS_CONVERSION 0
-#define VIEW_COLOR_EXTRACTION 1
-#define VIEW_CANNY_CONVERSION 2
-#define VIEW_EROSION_DILATION 3
-#define VIEW_DETECT_SHAPES 4
-#define VIEW_SIGNS_RECOGNIZE 5
-
-#define NO_SIGN 0
-#define WARNING_SIGN 1
-#define FORBIDDEN_SIGN 2
-#define OBLIGATORY_SIGN 3
-#define INFORMATION_SIGN 4
-#define END_FORBIDDEN_SIGN 5 //not used
-
-#define SIGNAL_DETECTION_MESSAGE_TIMEOUT 3000
-
-#define REFERENCE_WIDTH 480
+const int NUMBER_WARNING_SIGNS = 1; 
+const int NUMBER_FORBIDDEN_SIGNS = 11;
+const int NUMBER_OBLIGATORY_SIGNS = 5;
+const int NUMBER_INFORMATION_SIGNS = 1;	
+	
+const char *warning_sign_id_array[NUMBER_WARNING_SIGNS] = {};	
+const char *forbidden_sign_id_array[NUMBER_FORBIDDEN_SIGNS] = { "B2", "C11b", "C13_40", "C13_50", "C13_60", "C13_70", "C13_80", "C13_100", "C13_120", "C14a", "C14b" };
+const char *obligatory_sign_id_array[NUMBER_OBLIGATORY_SIGNS] = { "D1c", "D3a", "D4", "D8_40", "D8_50" };
+const char *information_sign_id_array[NUMBER_INFORMATION_SIGNS] = { "H7" };
 
 const int NUM_RANGES = 7;
 cv::Mat colorRangesMat[NUM_RANGES];
@@ -66,8 +39,11 @@ const Scalar circleColor(43, 245, 96);
 const Scalar rectangleColor(204, 0, 102);
 const Scalar triangleColor(255, 128, 0);
 
-// current detected sign type
-int detected_sign_type = NO_SIGN;
+const int MAX_DETECTED_SIGNS = 99;
+int tsr_idx = 0;
+
+// current detected signs
+TSD detected_traffic_signs[MAX_DETECTED_SIGNS];
 
 // frame counter
 long frameCounter = 0;
@@ -78,6 +54,13 @@ long time_since_last_detection;
 const cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(1, 1), cv::Point(0,0));
 
 const char* saveFilesPath = NULL;
+
+char *assetsDataPath = NULL;
+
+struct fann *warning_ann = NULL;
+struct fann *forbidden_ann = NULL;
+struct fann *obligatory_ann = NULL;
+struct fann *information_ann = NULL;
 
 float CLOCK()
 {
@@ -122,6 +105,97 @@ static float angle(cv::Point pt1, cv::Point pt2, cv::Point pt0)
 	return (dx1*dx2 + dy1*dy2)/sqrt((dx1*dx1 + dy1*dy1)*(dx2*dx2 + dy2*dy2) + 1e-10);
 }
 
+int get_B_L_GrayImage(cv::Mat b_matrix, float *MR, float *MG, float *MB, float VH[], float HH[], int size) {
+	cv::Mat b_l_matrix;
+
+	// B matrix is the RGB image which was captured by the camera: 48x48 px
+	if (b_matrix.empty())
+		return -1;
+
+	float t;
+	t = (float)getTickCount();
+
+	// Create destination "gray" matrix
+	b_l_matrix = cv::Mat(size, size, CV_8U);
+
+	// Set all "gray" Matrix elements to 0
+	for (int i = 0; i < size; i++) {
+		VH[i] = 0;
+		HH[i] = 0;
+	}
+
+	MatIterator_<Vec3b> it, end;
+	MatIterator_<uchar> itF, endF;
+	int row = 0, col = 0;
+	float T = 0;
+	for (it = b_matrix.begin<Vec3b>(), end = b_matrix.end<Vec3b>(), itF = b_l_matrix.begin<uchar>(), endF = b_l_matrix.end<uchar>(); it != end; ++it, ++itF)
+	{
+		// Get the RGB components pixel values
+		uint8_t red = (*it)[0];
+		uint8_t green = (*it)[1];
+		uint8_t blue = (*it)[2];
+
+		(*MB) += blue;
+		(*MG) += green;
+		(*MR) += red;
+
+		// Calculate gray value according to pre-defined RGB weights
+		*itF = 0.49 * red + 0.29 * green + 0.22 * blue;
+
+		// Calculate adaptive threshold
+		T += ((*itF) * 1.0);
+	}
+
+	// Normalize the Threshold value
+	T = ((T * 1.0) / (size * size));
+
+	row = 0;
+	col = 0;
+	for (itF = b_l_matrix.begin<uchar>(), endF = b_l_matrix.end<uchar>(); itF != endF; ++itF)
+	{
+		// See if it's a new row
+		if (col == size) {
+			col = 0;
+			row++;
+		}
+
+		float rowVal = VH[row];
+		float colVal = HH[col];
+
+		// Sum the matrix element proportional value (proportional to the number of elements)
+		if ((*itF) > T) {
+			VH[row] = rowVal + (float)(((*itF) * 1.0f) / size);
+			HH[col++] = colVal + (float)(((*itF) * 1.0f) / size);
+		}
+		else {
+			VH[row] = rowVal + 0;
+			HH[col++] = colVal + 0;
+		}
+	}
+
+	// Calculate Normalized Square value
+	int normalized_square = (size * size) * 256;
+
+	// Calculate the Normalized Maximum RGB values
+	(*MB) = (*MB) / normalized_square;
+	(*MG) = (*MG) / normalized_square;
+	(*MR) = (*MR) / normalized_square;
+
+	t = 1000 * ((float)getTickCount() - t) / getTickFrequency();
+	//LOG("Duration: %f", t);
+
+	return 0;
+}
+
+void clearDetectedSigns() {
+	for(int i=0;i<tsr_idx;i++) {
+		detected_traffic_signs[i].type = -1;
+		detected_traffic_signs[i].id = -1;
+	}
+	
+	tsr_idx = 0;
+}
+
 void setDetectedSignType(int sign_type) {
 	// Get current time in milliseconds
 	milliseconds ms = duration_cast< milliseconds >(
@@ -130,7 +204,8 @@ void setDetectedSignType(int sign_type) {
 	
 	time_since_last_detection = ms.count();
 
-	detected_sign_type = sign_type;
+	detected_traffic_signs[tsr_idx].type = sign_type;
+	//detected_sign_type = sign_type;
 }
 
 void getFixedSizeImagefromRectangle(cv::Mat *previewFrame, cv::Mat *dst, cv::Rect rect) {
@@ -145,7 +220,7 @@ void getFixedSizeImagefromRectangle(cv::Mat *previewFrame, cv::Mat *dst, cv::Rec
 		
 		if (rect.y + rect.height > frame.rows)
 			rect.y = abs(frame.rows - rect.height);
-		
+	
 		// Crop frame from rectangle parameters
 		cv::Mat miniMat = frame(rect);
 
@@ -181,14 +256,14 @@ void writeShapeFound(cv::Mat* image) {
 		std::ostringstream shapeFileName("");
 		shapeFileName << saveFilesPath << "/trafficsignsdetected/sign_" << ms.count() << ".jpeg";
 		
-		LOG("Saving image %s\n", shapeFileName.str().c_str());
+		//LOG("Saving image %s\n", shapeFileName.str().c_str());
 		
 		bool res = cv::imwrite(shapeFileName.str(), *(Mat*)image, compression_params);
 		if( !res ) {
 			LOG("Failed to write image %s to SDCard\n", shapeFileName.str().c_str());
 		}
 		else {
-			LOG("Successfuly wrote image %s to SDCard\n", shapeFileName.str().c_str());
+			//LOG("Successfuly wrote image %s to SDCard\n", shapeFileName.str().c_str());
 		}
 	}
 	catch (std::exception& ex) {
@@ -245,6 +320,121 @@ bool imageIsBlueColored(cv::Mat * origImage) {
 	return (blue_percent > 0.15);
 }
 
+char * getANNPath(const char *filename) {
+    int strLength = strlen(assetsDataPath) + strlen(filename) + 2;
+    char *file_data_path = (char*) malloc (sizeof(char)*strLength);
+    
+    strcpy(file_data_path, assetsDataPath);
+    strcat(file_data_path, "/");
+    strcat(file_data_path, filename);
+    
+    file_data_path[strLength-1] = '\0';
+    
+    return file_data_path;
+}
+
+void loadANNs() {
+	// Load the Artificial Neural Network specific for each sign_type
+    // It's more efficient to load the ANN's just once at the begining
+    // and destroy them when onDestroy is called
+	//if( NULL == warning_ann ) {
+	//	warning_ann = fann_create_from_file(getANNPath("warning_traffic_signs.net"));
+	//}
+	if( NULL == forbidden_ann ) {
+		forbidden_ann = fann_create_from_file(getANNPath("forbidden_traffic_signs.net"));
+	}
+	if( NULL == obligatory_ann ) {
+		obligatory_ann = fann_create_from_file(getANNPath("obligatory_traffic_signs.net"));
+	}
+	if( NULL == information_ann ) {
+		information_ann = fann_create_from_file(getANNPath("information_traffic_signs.net"));
+	}
+}
+
+int runFannDetector(int sign_type, fann_type inputs[]) {
+	int result = -1;
+	
+	fann_type *calc_out;
+    struct fann *ann = NULL;
+    
+    if( sign_type == WARNING_SIGN ) {
+    	//ann = warning_ann;    	
+    }
+    else if( sign_type == FORBIDDEN_SIGN ) {
+    	ann = forbidden_ann;
+    }
+    else if( sign_type == OBLIGATORY_SIGN ) {
+    	ann = obligatory_ann;
+    }
+    else if( sign_type == INFORMATION_SIGN ) {
+    	ann = information_ann;
+    }
+    
+    if( NULL != ann) {
+    	//LOG("Running ANN ...");
+	    calc_out = fann_run(ann, inputs);
+	    //LOG("Running ANN DONE");
+	    	    
+	    //LOG("OUTPUTS: %i", ann->num_output);
+	    float max = -1.0f;
+	    int idx = -1;
+	    
+	    for(int i=0;i<ann->num_output;i++) {
+		    if(calc_out[i] > DETECT_THRESHOLD) {
+			    if( calc_out[i] > max ) {
+			    	max = calc_out[i];
+			    	idx = i;
+			    }		    	
+	    	}
+	    }
+	    
+	    if( max > 0) {
+	    	result = idx;
+		    LOG("%d: %f", idx, max);
+		}
+    }
+    
+    // Result will have the detected sign id
+    return result;
+}
+
+int testShapeFound(cv::Mat* frame, cv::Rect rect, int sign_type)
+{
+	cv::Mat b_matrix;
+	
+	getFixedSizeImagefromRectangle(frame, &b_matrix, rect);
+	
+	// TODO: Verify if we need this
+	// Convert to original BGR color
+	// cv::cvtColor(b_matrix , b_matrix, CV_RGBA2BGR);
+	
+    float MB = 0, MG = 0, MR = 0;
+	float *VH, *HH;
+    
+    // B matrix is the RGB image which was captured by the camera: 48x48 px
+	const int size = b_matrix.cols;
+
+	VH = (float *)malloc(sizeof(float) * size);
+	HH = (float *)malloc(sizeof(float) * size);
+	memset(VH, 0, sizeof(VH));
+	memset(HH, 0, sizeof(HH));
+
+	get_B_L_GrayImage(b_matrix, &MB, &MG, &MR, VH, HH, size);	
+	
+	// MB + MG + MR + 48 (HH) + 48 (VH) = 99
+	const int numInputs = 3 + (size * 2);
+	fann_type inputs[numInputs];
+	inputs[0] = MB;
+	inputs[1] = MG;
+	inputs[2] = MR;
+	for (int h = 0, v = 0, idx = 0; idx<size; idx++, h++, v++) {
+		inputs[idx + 3] = VH[h];
+		inputs[idx + 3 + size] = HH[v];
+	}
+	
+	return runFannDetector(sign_type, inputs);
+}
+
 void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveShapes) {
 	// Find contours
 	std::vector<std::vector<cv::Point> > contours;
@@ -277,22 +467,37 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 		if (boundRect[i].width > 60 || boundRect[i].height > 60 || (boundRect[i].width > (2 * boundRect[i].height)) || ((2 * boundRect[i].width) < boundRect[i].height))
 			continue;
 		
+		// Rectangle which must be used when fetching the image for AAN
+		// and also when saving the image to sdcard
+		cv::Rect tri_square_bounds = boundRect[i];
+		
+		// For the representation of the captured sign use the boundRect
+		// which is converted to the scaleFactor representation
 		if (approx.size() >= 3 && approx.size() <= 6) {
 			// Adjust the bounding rectangle dimensions and position with the scale factor value
 			boundRect[i].height = (boundRect[i].height * inverseScaleFactor);
 			boundRect[i].width = (boundRect[i].width * inverseScaleFactor);
 			boundRect[i].x = (boundRect[i].x * inverseScaleFactor);
 			boundRect[i].y = (boundRect[i].y * inverseScaleFactor);
-		}
+		}		
 		
+		int temp_detected_sign = NO_SIGN;
 		// Triangle
 		if (approx.size() == 3)
 		{
 			setDetectedSignType(WARNING_SIGN);
+						
+			temp_detected_sign = testShapeFound(&frame, tri_square_bounds, WARNING_SIGN);
 			rectangle(previewFrame, boundRect[i].tl(), boundRect[i].br(), triangleColor, 2, 8, 0);
+			if(temp_detected_sign >= 0) {
+				//detected_sign = temp_detected_sign;
+				detected_traffic_signs[tsr_idx++].id = temp_detected_sign;				
+				LOG("Found Traffic Sign at Idx: [%i]", temp_detected_sign);
+			}			
+			
 			if(saveShapes) {
-				writeShapeFound(&frame, boundRect[i]);
-			}
+				writeShapeFound(&frame, tri_square_bounds);
+			}			
 		}
 		// Rectangle
 		else if (approx.size() >= 4 && approx.size() <= 6)
@@ -317,9 +522,16 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 			// to determine the shape of the contour
 			if (vtc == 4 && mincos >= -0.1 && maxcos <= 0.3) {
 				setDetectedSignType(INFORMATION_SIGN);
+				
+				temp_detected_sign = testShapeFound(&frame, tri_square_bounds, INFORMATION_SIGN);
 				rectangle(previewFrame, boundRect[i].tl(), boundRect[i].br(), rectangleColor, 3, 8, 0);
+				if(temp_detected_sign >= 0) {
+					detected_traffic_signs[tsr_idx++].id = temp_detected_sign;
+					LOG("Found Traffic Sign at Idx: [%i]", temp_detected_sign);
+				}
+				
 				if(saveShapes) {
-					writeShapeFound(&frame, boundRect[i]);
+					writeShapeFound(&frame, tri_square_bounds);
 				}
 			}
 		}
@@ -348,8 +560,10 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 			
 			if( imageIsBlueColored(&mCircle)) {
 				setDetectedSignType(OBLIGATORY_SIGN);
+				temp_detected_sign = testShapeFound(&frame, (cv::Rect)cv::boundingRect(contours[i]), OBLIGATORY_SIGN);			
 			} else {
 				setDetectedSignType(FORBIDDEN_SIGN);
+				temp_detected_sign = testShapeFound(&frame, (cv::Rect)cv::boundingRect(contours[i]), FORBIDDEN_SIGN);
 			}
 			
 			if (std::abs(1 - ((float)r.width / r.height)) <= 0.2 &&
@@ -359,7 +573,12 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 			else {
 				circle(previewFrame, center[i], (int)(contourRadius[i] * inverseScaleFactor), circleColor, 4, 8, 0);
 			}
-			
+			if(temp_detected_sign >= 0) {
+				//detected_sign = temp_detected_sign;
+				detected_traffic_signs[tsr_idx++].id = temp_detected_sign;				
+				LOG("Found Traffic Sign at Idx: [%i]", temp_detected_sign);
+			}
+						
 			if(saveShapes) {							    
 				// Save shapes on SDCard for later analysis
 				// Use the boundingRect since r is already set with the inverted scale factor
@@ -367,7 +586,7 @@ void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveSha
 			}
 			
 			mCircle.release();
-		}
+		}		
 	}
 }
 
@@ -386,14 +605,21 @@ bool isResolutionChanged(int currentWidth) {
 }
 
 extern "C" {
-	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
-									(JNIEnv* env, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS);
-	
-	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_DetectTrafficSigns
-									(JNIEnv* env, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
+	JNIEXPORT jobjectArray JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_detectTrafficSigns
+									(JNIEnv* env, jobject, jstring dataPath, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
+		
 		// Initialized fps clock
 		float start = CLOCK();
 
+		// Set Data Path
+		assetsDataPath = (char*)env->GetStringUTFChars(dataPath, NULL);
+		
+		// Load ANN networks from files
+		loadANNs();
+		
+		// Clear previous detected signs
+		clearDetectedSigns();
+		
 		// Set the path where we should store the saved image files
 		// Downloads/trafficsigns_detected shall be used for now
 		if( saveShapes && saveFilesPath == NULL ) {
@@ -409,7 +635,7 @@ extern "C" {
 			
 			saveFilesPath = env->GetStringUTFChars(extStoragePath,NULL);
 			
-			LOG("DOWNLOADS DIRECTORY: %s", saveFilesPath);
+			//LOG("DOWNLOADS DIRECTORY: %s", saveFilesPath);
 		}
 
         if( frameCounter == LONG_MAX - 1 )
@@ -424,8 +650,8 @@ extern "C" {
 			
 			setInverseScaleFactor(previewFrame.cols);
 			
-			LOG("Scale Factor is set to: %f", scaleFactor);
-			LOG("Inverse Scale Factor is set to: %f", inverseScaleFactor);
+			//LOG("Scale Factor is set to: %f", scaleFactor);
+			//LOG("Inverse Scale Factor is set to: %f", inverseScaleFactor);
 		}		
 				
 		cv::Mat frame, tempMat, resultMat;	
@@ -454,7 +680,7 @@ extern "C" {
 			tempMat.release();
 			resultMat.release();
 			
-			return NO_SIGN;
+			return (jobjectArray)env->NewObjectArray(0, env->FindClass("java/lang/String"), env->NewStringUTF(""));;
 		}
 	
 		for (int i = 0; i < NUM_RANGES; i++) {
@@ -474,7 +700,7 @@ extern "C" {
 			tempMat.release();
 			resultMat.release();
 			
-			return NO_SIGN;
+			return (jobjectArray)env->NewObjectArray(0, env->FindClass("java/lang/String"), env->NewStringUTF(""));;
 		}
 		
 		// Blur the gray image
@@ -488,7 +714,7 @@ extern "C" {
 			tempMat.release();
 			resultMat.release();
 			
-			return NO_SIGN;
+			return (jobjectArray)env->NewObjectArray(0, env->FindClass("java/lang/String"), env->NewStringUTF(""));;
 		}
 		
 		// TODO: CONFIRM THIS
@@ -503,20 +729,23 @@ extern "C" {
 			tempMat.release();
 			resultMat.release();
 			
-			return NO_SIGN;
+			return (jobjectArray)env->NewObjectArray(0, env->FindClass("java/lang/String"), env->NewStringUTF(""));;
 		}
 		
+		/*
 		if( detected_sign_type != NO_SIGN ) {
 			// Get current time in milliseconds
 			milliseconds ms = duration_cast< milliseconds >(
 		    	high_resolution_clock::now().time_since_epoch()
 			);
 			
-			// X seconds after rhe last detected sign set the detection to NO_SIGN
+			// X seconds after the last detected sign set the detection to NO_SIGN
 			if( ((long)ms.count() - time_since_last_detection) > SIGNAL_DETECTION_MESSAGE_TIMEOUT ) {
 				detected_sign_type = NO_SIGN;
+				detected_sign = NO_SIGN;
 			}
 		}
+		*/
 		
 		findShapes(previewFrame, frame, resultMat, saveShapes);			
         
@@ -531,8 +760,60 @@ extern "C" {
         // Release resources
         frame.release();
 		tempMat.release();
-		resultMat.release();					
+		resultMat.release();
 		
-		return detected_sign_type;
+		jobjectArray signs_detected = (jobjectArray)env->NewObjectArray(tsr_idx, env->FindClass("java/lang/String"), env->NewStringUTF(""));
+         
+		for(int i=0;i<tsr_idx;i++) {
+			if( detected_traffic_signs[i].type >= 0 ) {
+				switch(detected_traffic_signs[i].type) {
+		        	case WARNING_SIGN:
+		        		if( detected_traffic_signs[i].id < NUMBER_WARNING_SIGNS ) {
+		        			//return env->NewStringUTF(warning_sign_id_array[detected_traffic_signs[i].id]);
+		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(warning_sign_id_array[detected_traffic_signs[i].id]));
+		        		}
+		        		break;
+		        	case FORBIDDEN_SIGN:
+		        		if( detected_traffic_signs[i].id < NUMBER_FORBIDDEN_SIGNS ) {
+		        			//return env->NewStringUTF(forbidden_sign_id_array[detected_traffic_signs[i].id]);
+		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(forbidden_sign_id_array[detected_traffic_signs[i].id]));
+		        		}	        		
+		        		break;
+		        	case OBLIGATORY_SIGN:
+		        		if( detected_traffic_signs[i].id < NUMBER_OBLIGATORY_SIGNS ) {
+		        			//return env->NewStringUTF(obligatory_sign_id_array[detected_traffic_signs[i].id]);
+		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(obligatory_sign_id_array[detected_traffic_signs[i].id]));
+		        		}	        		
+		        		break;
+		        	case INFORMATION_SIGN:
+		        		if( detected_traffic_signs[i].id < NUMBER_INFORMATION_SIGNS ) {
+		        			//return env->NewStringUTF(information_sign_id_array[detected_traffic_signs[i].id]);
+		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(information_sign_id_array[detected_traffic_signs[i].id]));
+		        		}	        		
+		        		break;
+		        }
+	        }
+        }
+
+ 		return signs_detected;
+	}
+	
+	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_destroyANNs
+									(JNIEnv* env, jobject) {
+		if( NULL == warning_ann ) {
+			fann_destroy(warning_ann);
+		}
+		if( NULL == forbidden_ann ) {
+			fann_destroy(forbidden_ann);
+		}
+		if( NULL == obligatory_ann ) {
+			fann_destroy(obligatory_ann);
+		}
+		if( NULL == information_ann ) {
+			fann_destroy(information_ann);
+		}
+		
+		LOG("Destroyed ANNs");
+		return 0;
 	}
 }

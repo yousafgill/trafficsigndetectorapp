@@ -16,6 +16,7 @@
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+#include <android/log.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +29,9 @@
 #include "fann.h"
 
 /* #define FANN_NO_SEED */
+
+#define  LOG_TAG "FANN TEST"
+#define  LOG(...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
 
 FANN_EXTERNAL struct fann *FANN_API fann_create_standard(unsigned int num_layers, ...)
 {
@@ -1215,64 +1219,64 @@ FANN_EXTERNAL void FANN_API fann_print_parameters(struct fann *ann)
 	unsigned int i;
 #endif
 
-	printf("Input layer                          :%4d neurons, 1 bias\n", ann->num_input);
+	LOG("Input layer                          :%4d neurons, 1 bias\n", ann->num_input);
 	for(layer_it = ann->first_layer + 1; layer_it != ann->last_layer - 1; layer_it++)
 	{
 		if(ann->network_type == FANN_NETTYPE_SHORTCUT)
 		{
-			printf("  Hidden layer                       :%4d neurons, 0 bias\n",
+			LOG("  Hidden layer                       :%4d neurons, 0 bias\n",
 				   (int)(layer_it->last_neuron - layer_it->first_neuron));
 		}
 		else
 		{
-			printf("  Hidden layer                       :%4d neurons, 1 bias\n",
+			LOG("  Hidden layer                       :%4d neurons, 1 bias\n",
 				   (int)(layer_it->last_neuron - layer_it->first_neuron - 1));
 		}
 	}
-	printf("Output layer                         :%4d neurons\n", ann->num_output);
-	printf("Total neurons and biases             :%4d\n", fann_get_total_neurons(ann));
-	printf("Total connections                    :%4d\n", ann->total_connections);
-	printf("Connection rate                      :%8.3f\n", ann->connection_rate);
-	printf("Network type                         :   %s\n", FANN_NETTYPE_NAMES[ann->network_type]);
+	LOG("Output layer                         :%4d neurons\n", ann->num_output);
+	LOG("Total neurons and biases             :%4d\n", fann_get_total_neurons(ann));
+	LOG("Total connections                    :%4d\n", ann->total_connections);
+	LOG("Connection rate                      :%8.3f\n", ann->connection_rate);
+	LOG("Network type                         :   %s\n", FANN_NETTYPE_NAMES[ann->network_type]);
 #ifdef FIXEDFANN
-	printf("Decimal point                        :%4d\n", ann->decimal_point);
-	printf("Multiplier                           :%4d\n", ann->multiplier);
+	LOG("Decimal point                        :%4d\n", ann->decimal_point);
+	LOG("Multiplier                           :%4d\n", ann->multiplier);
 #else
-	printf("Training algorithm                   :   %s\n", FANN_TRAIN_NAMES[ann->training_algorithm]);
-	printf("Training error function              :   %s\n", FANN_ERRORFUNC_NAMES[ann->train_error_function]);
-	printf("Training stop function               :   %s\n", FANN_STOPFUNC_NAMES[ann->train_stop_function]);
+	LOG("Training algorithm                   :   %s\n", FANN_TRAIN_NAMES[ann->training_algorithm]);
+	LOG("Training error function              :   %s\n", FANN_ERRORFUNC_NAMES[ann->train_error_function]);
+	LOG("Training stop function               :   %s\n", FANN_STOPFUNC_NAMES[ann->train_stop_function]);
 #endif
 #ifdef FIXEDFANN
-	printf("Bit fail limit                       :%4d\n", ann->bit_fail_limit);
+	LOG("Bit fail limit                       :%4d\n", ann->bit_fail_limit);
 #else
-	printf("Bit fail limit                       :%8.3f\n", ann->bit_fail_limit);
-	printf("Learning rate                        :%8.3f\n", ann->learning_rate);
-	printf("Learning momentum                    :%8.3f\n", ann->learning_momentum);
-	printf("Quickprop decay                      :%11.6f\n", ann->quickprop_decay);
-	printf("Quickprop mu                         :%8.3f\n", ann->quickprop_mu);
-	printf("RPROP increase factor                :%8.3f\n", ann->rprop_increase_factor);
-	printf("RPROP decrease factor                :%8.3f\n", ann->rprop_decrease_factor);
-	printf("RPROP delta min                      :%8.3f\n", ann->rprop_delta_min);
-	printf("RPROP delta max                      :%8.3f\n", ann->rprop_delta_max);
-	printf("Cascade output change fraction       :%11.6f\n", ann->cascade_output_change_fraction);
-	printf("Cascade candidate change fraction    :%11.6f\n", ann->cascade_candidate_change_fraction);
-	printf("Cascade output stagnation epochs     :%4d\n", ann->cascade_output_stagnation_epochs);
-	printf("Cascade candidate stagnation epochs  :%4d\n", ann->cascade_candidate_stagnation_epochs);
-	printf("Cascade max output epochs            :%4d\n", ann->cascade_max_out_epochs);
-	printf("Cascade min output epochs            :%4d\n", ann->cascade_min_out_epochs);
-	printf("Cascade max candidate epochs         :%4d\n", ann->cascade_max_cand_epochs);
-	printf("Cascade min candidate epochs         :%4d\n", ann->cascade_min_cand_epochs);
-	printf("Cascade weight multiplier            :%8.3f\n", ann->cascade_weight_multiplier);
-	printf("Cascade candidate limit              :%8.3f\n", ann->cascade_candidate_limit);
+	LOG("Bit fail limit                       :%8.3f\n", ann->bit_fail_limit);
+	LOG("Learning rate                        :%8.3f\n", ann->learning_rate);
+	LOG("Learning momentum                    :%8.3f\n", ann->learning_momentum);
+	LOG("Quickprop decay                      :%11.6f\n", ann->quickprop_decay);
+	LOG("Quickprop mu                         :%8.3f\n", ann->quickprop_mu);
+	LOG("RPROP increase factor                :%8.3f\n", ann->rprop_increase_factor);
+	LOG("RPROP decrease factor                :%8.3f\n", ann->rprop_decrease_factor);
+	LOG("RPROP delta min                      :%8.3f\n", ann->rprop_delta_min);
+	LOG("RPROP delta max                      :%8.3f\n", ann->rprop_delta_max);
+	LOG("Cascade output change fraction       :%11.6f\n", ann->cascade_output_change_fraction);
+	LOG("Cascade candidate change fraction    :%11.6f\n", ann->cascade_candidate_change_fraction);
+	LOG("Cascade output stagnation epochs     :%4d\n", ann->cascade_output_stagnation_epochs);
+	LOG("Cascade candidate stagnation epochs  :%4d\n", ann->cascade_candidate_stagnation_epochs);
+	LOG("Cascade max output epochs            :%4d\n", ann->cascade_max_out_epochs);
+	LOG("Cascade min output epochs            :%4d\n", ann->cascade_min_out_epochs);
+	LOG("Cascade max candidate epochs         :%4d\n", ann->cascade_max_cand_epochs);
+	LOG("Cascade min candidate epochs         :%4d\n", ann->cascade_min_cand_epochs);
+	LOG("Cascade weight multiplier            :%8.3f\n", ann->cascade_weight_multiplier);
+	LOG("Cascade candidate limit              :%8.3f\n", ann->cascade_candidate_limit);
 	for(i = 0; i < ann->cascade_activation_functions_count; i++)
-		printf("Cascade activation functions[%d]      :   %s\n", i,
+		LOG("Cascade activation functions[%d]      :   %s\n", i,
 			FANN_ACTIVATIONFUNC_NAMES[ann->cascade_activation_functions[i]]);
 	for(i = 0; i < ann->cascade_activation_steepnesses_count; i++)
-		printf("Cascade activation steepnesses[%d]    :%8.3f\n", i,
+		LOG("Cascade activation steepnesses[%d]    :%8.3f\n", i,
 			ann->cascade_activation_steepnesses[i]);
 		
-	printf("Cascade candidate groups             :%4d\n", ann->cascade_num_candidate_groups);
-	printf("Cascade no. of candidates            :%4d\n", fann_get_cascade_num_candidates(ann));
+	LOG("Cascade candidate groups             :%4d\n", ann->cascade_num_candidate_groups);
+	LOG("Cascade no. of candidates            :%4d\n", fann_get_cascade_num_candidates(ann));
 	
 	/* TODO: dump scale parameters */
 #endif

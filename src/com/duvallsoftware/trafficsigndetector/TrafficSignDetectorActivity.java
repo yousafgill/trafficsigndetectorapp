@@ -1,28 +1,39 @@
 package com.duvallsoftware.trafficsigndetector;
 
 import java.io.File;
-import java.io.IOException;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.reflect.Field;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
+import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.android.Utils;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.Rect;
-import org.opencv.core.Scalar;
-import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
-import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
+
 import android.app.Activity;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
+import android.content.res.AssetManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.hardware.Camera.Size;
 import android.media.MediaScannerConnection;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
@@ -32,6 +43,8 @@ import android.view.SubMenu;
 import android.view.SurfaceView;
 import android.view.WindowManager;
 import android.widget.Toast;
+
+import com.duvallsoftware.trafficsigndetector.R.raw;
 
 public class TrafficSignDetectorActivity extends Activity implements CvCameraViewListener2 {
     private static final String    TAG = "TrafficSignsDetector::Activity";
@@ -50,6 +63,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     private static final int       VIEW_SIGNS_RECOGNIZE		= 5;
 
     private int                    mViewMode;
+    private int					   mZoom;
     private Mat                    mRgba;
     private Mat                    mIntermediateMat;
     private Mat                    mGray;
@@ -64,10 +78,9 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     private MenuItem               mItemDetectShapes;
     private MenuItem               mItemSignsRecognize;
     private MenuItem               mItemPreviewResolution;
-    private MenuItem			   mItemTestFann;
     private MenuItem			   mItemNoZoom;
-    private MenuItem			   mItemZoom2;
-    private MenuItem			   mItemZoom4;
+    private MenuItem			   mItemZoomMinus;
+    private MenuItem			   mItemZoomPlus;
     // XXX: Remove on final version
     private MenuItem			   mItemSaveShapes;
     private MenuItem			   mItemShowFPS;
@@ -85,6 +98,15 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     
     private CameraView   mOpenCvCameraView;
 
+    private AssetManager mgr;
+    private boolean forceCopy = false;
+    private String assetsDataPath = null;
+    
+    // 3 Seconds
+    private static final int SHOW_SIGN_DURATION = 3000;
+    
+    private HashMap<String, DetectedSign> detectedSigns = new HashMap<String, DetectedSign>();
+    
     private BaseLoaderCallback  mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
         public void onManagerConnected(int status) {
@@ -135,10 +157,50 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
             // make the scanner aware of the location and the files you want to see
             MediaScannerConnection.scanFile(this, new String[] {path.toString()}, null, null);
         }
+                
+        sharedpreferences = getSharedPreferences("TrafficSignDetectionPrefs", Context.MODE_PRIVATE);
+        assetsDataPath = getApplicationContext().getFilesDir().getPath();
         
-        sharedpreferences = getSharedPreferences("TrafficSignDetectionPrefs", Context.MODE_PRIVATE);        
+        String obligatoryANN = "obligatory_traffic_signs.net";
+        String obligatoryDataANN = assetsDataPath + File.separator + obligatoryANN;
+        
+        String informationANN = "information_traffic_signs.net";
+        String informationDataANN = assetsDataPath + File.separator + informationANN;
+        
+        String forbiddenANN = "forbidden_traffic_signs.net";
+        String forbiddenDataANN = assetsDataPath + File.separator + forbiddenANN;
+        
+        mgr = getApplicationContext().getAssets();
+        
+        copyAsset(obligatoryANN, obligatoryDataANN);
+        copyAsset(informationANN, informationDataANN);
+        copyAsset(forbiddenANN, forbiddenDataANN);
     }
 
+    private void copyAsset(String srcAsset, String dst) {
+//		File f = new File(dst);		        
+//    	if(!f.exists()) {
+	    	if( mgr == null ) {
+	    		mgr = getApplicationContext().getAssets();
+	    	}
+	    	try {
+		        InputStream is = mgr.open(srcAsset);
+		        OutputStream os = new FileOutputStream(dst);
+		
+		        byte[] buffer = new byte[4096];
+		        while (is.read(buffer) > 0) {
+		            os.write(buffer);
+		        }
+		        
+		        os.flush();
+		        os.close();
+		        is.close();
+	    	} catch (Exception e1) {
+				e1.printStackTrace();
+			}
+//      }
+    }
+    
     @Override
     public boolean onPrepareOptionsMenu(Menu menu) {
         menu.clear();
@@ -151,11 +213,10 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         mItemErosionDilation = menu.add(R.string.erosion_dilation);
         mItemDetectShapes = menu.add(R.string.detect_shapes);
         mItemSignsRecognize = menu.add(R.string.signs_recognize);
-        mItemTestFann = menu.add(R.string.fann_test);
         
         mItemNoZoom = menu.add(R.string.no_zoom);
-        mItemZoom2 = menu.add(R.string.zoom_2);
-        mItemZoom4 = menu.add(R.string.zoom_4);
+        mItemZoomMinus = menu.add(R.string.zoom_minus);
+        mItemZoomPlus = menu.add(R.string.zoom_plus);
         
         // XXX: Remove on final version
         mItemSaveShapes = menu.add( (saveShapes ? R.string.disable_shapes_save : R.string.enable_shapes_save) );
@@ -198,7 +259,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
     public void onResume()
     {
         super.onResume();
-        //OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_5, this, mLoaderCallback);
+//        OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_2_4_5, this, mLoaderCallback);
         OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
     }
 
@@ -206,6 +267,9 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         super.onDestroy();
         if (mOpenCvCameraView != null)
             mOpenCvCameraView.disableView();
+        
+        // Free JNI resources
+        destroyANNs();
     }
 
     public void onCameraViewStarted(int width, int height) {
@@ -222,6 +286,8 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         
         // Only apply after camera was initialized because of zoom setting
         applyPreferences();
+        
+        //runFannDetector(assetsDataPath);
     }
     
     private void setDefaultResolution() {
@@ -286,7 +352,8 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 			}
 		}
 		if (sharedpreferences.contains(zoomPref)) {
-			mOpenCvCameraView.setZoom(sharedpreferences.getInt(zoomPref, 2));
+			mZoom = sharedpreferences.getInt(zoomPref, 2);
+			mOpenCvCameraView.setZoom(mZoom);
 		}
 	}
 
@@ -296,46 +363,90 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         mIntermediateMat.release();
     }
 
+    public static int getResId(String resName, Class<?> c) {
+        try {
+            Field idField = c.getDeclaredField(resName);
+            return idField.getInt(idField);
+        } catch (Exception e) {
+            //e.printStackTrace();
+            return -1;
+        } 
+    }
+    
+    private void expireDetectedSigns() {
+    	long currentMillis = System.currentTimeMillis();
+    	for(Iterator<Map.Entry<String, DetectedSign>> it = detectedSigns.entrySet().iterator(); it.hasNext(); ) {
+    		Map.Entry<String, DetectedSign> entry = it.next();
+    		if( currentMillis - ((DetectedSign)entry.getValue()).getDetectedTimestamp() > SHOW_SIGN_DURATION ) {
+    			it.remove();
+    		}
+	    }
+    }
+    
     public Mat onCameraFrame(CvCameraViewFrame inputFrame) {    	
     	mRgba = inputFrame.rgba();
-        int detected_sign = DetectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode, saveShapes, showFPS);
-        //Log.i(TAG, "Detected Sign: " + detected_sign);
-        if( detected_sign > NO_SIGN ) {
-        	int imageSrcID = -1;
-        	switch(detected_sign) {
-        	case WARNING_SIGN:
-        		imageSrcID = R.drawable.warning;
-        		break;
-        	case FORBIDDEN_SIGN:
-        		imageSrcID = R.drawable.forbidden;
-        		break;
-        	case OBLIGATORY_SIGN:
-        		imageSrcID = R.drawable.obligatory;
-        		break;
-        	case INFORMATION_SIGN:
-        		imageSrcID = R.drawable.information;
-        		break;
-        	}
-        	
-        	if( imageSrcID >= 0 ) {
+    	
+    	expireDetectedSigns();
+    	
+        String detected_signs[] = detectTrafficSigns(assetsDataPath, mRgba.getNativeObjAddr(), mViewMode, saveShapes, showFPS);
+        // Add new signs to hasmap
+        if( detected_signs != null ) {
+	        for(int i=0;i<detected_signs.length;i++) {
+	        	DetectedSign detected_sign = new DetectedSign(detected_signs[i], System.currentTimeMillis());
+	        	detectedSigns.put(detected_sign.getSignId(), detected_sign);
+	        	
+		        Log.i(TAG, "Found new Sign: " + detected_sign.getSignId());	
+	        }
+        }
+        
+        // Images are 111 x 111 pixels
+        final int padding = 20;
+        final int imgWidth = 111;
+        final int x = padding;
+		
+        int i = 0, y_pos_idx = -1;
+        for(DetectedSign detected_sign : detectedSigns.values()) {
+	        if(y_pos_idx++ == 3) {
+	        	y_pos_idx = 0;
+	        }
+	        
+	        int imageSrcID = getResId(detected_sign.getSignId().toLowerCase(), raw.class);	        
+	        if( imageSrcID >= 0 ) {
 				try {
-					// Images are 144 x 144 pixels
-					int imgWidth = 144;
-	        		int x = 20;
-	        		int y = mRgba.rows() - imgWidth - 20;
-	        			        			        		
-		        	Mat image = Utils.loadResource(getApplicationContext(), imageSrcID);
+	        		int y = mRgba.rows() - imgWidth - padding - (i++ * (imgWidth + padding));
+	        		
+		        	Mat image = Utils.loadResource(getApplicationContext(), imageSrcID, -1);
 		        	Mat imageDst = new Mat();
+		        	
+		        	// TODO: Fix problems with transparencies (maybe by using bitmaps ???)
 		        	Imgproc.cvtColor(image, imageDst, Imgproc.COLOR_BGRA2RGBA);
 		        	imageDst.copyTo(mRgba.colRange(x, x + imgWidth).rowRange(y, y + imgWidth));
+		        	image.release();
+		        	imageDst.release();
 				} catch (Exception e) {
 					Log.i(TAG, "Exception: " + e.getMessage());
 				}	        	
-        	}
+	    	}
         }
+
         return mRgba;
     }
+    
+    private Mat resource2mat(Uri filepath) {
+    	Mat mat = new Mat();
 
+		try {
+			File resource = new File(new URI(filepath.getPath()));
+			Bitmap bmp = BitmapFactory.decodeFile(resource.getAbsolutePath());	        
+	        Utils.bitmapToMat(bmp, mat);
+		} catch (URISyntaxException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}        
+        
+        return mat;
+    }
+    
     public boolean onOptionsItemSelected(MenuItem item) {
         Log.i(TAG, "called onOptionsItemSelected: selected item: " + item);
         
@@ -354,17 +465,20 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
             mViewMode = VIEW_DETECT_SHAPES;
         } else if (item == mItemSignsRecognize) {
             mViewMode = VIEW_SIGNS_RECOGNIZE;
-        } else if (item == mItemTestFann) {
-            testFann();
         } else if (item == mItemNoZoom) {
             mOpenCvCameraView.setZoom(1);            
-            editor.putInt(zoomPref, 1);
-        } else if (item == mItemZoom2) {
-            mOpenCvCameraView.setZoom(2);
-            editor.putInt(zoomPref, 2);
-        } else if (item == mItemZoom4) {
-        	mOpenCvCameraView.setZoom(4);
-        	editor.putInt(zoomPref, 4);
+            editor.putInt(zoomPref, 1);            
+        } else if (item == mItemZoomMinus) {
+        	if( mZoom -1 >= 0)
+        		mZoom--;
+        	
+            mOpenCvCameraView.setZoom(mZoom );
+            editor.putInt(zoomPref, mZoom);
+        } else if (item == mItemZoomPlus) {
+        	if( mZoom + 1 < 10)
+        		mZoom++;
+        	mOpenCvCameraView.setZoom(mZoom);
+        	editor.putInt(zoomPref, mZoom);
         // XXX: Remove on final version
         } else if (item == mItemSaveShapes) {
         	saveShapes = !saveShapes;
@@ -393,6 +507,43 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
         return true;
     }
 
-    private static native int DetectTrafficSigns(long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
-    private static native void testFann();
+    private static native String[] detectTrafficSigns(String assetsDataPath, long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
+//    private static native void runFannDetector(String assetsDataPath);
+    private static native void destroyANNs();
+    
+    private class DetectedSign {
+    	
+    	private String signId = null;
+    	private long detectedTimestamp = -1;
+    	
+    	public DetectedSign(String signId, long timestampt) {
+    		this.signId = signId;
+    		this.detectedTimestamp = timestampt;
+    	}    	
+    	
+		/**
+		 * @return the detectedTimestamp
+		 */
+		public long getDetectedTimestamp() {
+			return detectedTimestamp;
+		}
+		/**
+		 * @param detectedTimestamp the detectedTimestamp to set
+		 */
+		public void setDetectedTimestamp(long detectedTimestamp) {
+			this.detectedTimestamp = detectedTimestamp;
+		}
+		/**
+		 * @return the signId
+		 */
+		public String getSignId() {
+			return signId;
+		}
+		/**
+		 * @param signId the signId to set
+		 */
+		public void setSignId(String signId) {
+			this.signId = signId;
+		}
+    }
 }
