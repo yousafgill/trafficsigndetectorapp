@@ -9,8 +9,8 @@
     <string name="signs_recognize">Signs Recognize</string>
     <string name="fann_test">Fann Test</string>
     <string name="no_zoom">No Zoom</string>    
-    <string name="zoom_2">Zoom 2+</string>
-    <string name="zoom_4">Zoom 4+</string>
+    <string name="zoom_minus">Zoom -</string>
+    <string name="zoom_plus">Zoom +</string>
     <string name="enable_shapes_save">Enable Shapes Save</string>
     <string name="disable_shapes_save">Disable Shapes Save</string>
     <string name="show_fps">Show FPS</string>

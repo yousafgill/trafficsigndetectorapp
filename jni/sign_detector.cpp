@@ -6,12 +6,12 @@
 const float DETECT_THRESHOLD = 0.8f;
 
 const int NUMBER_WARNING_SIGNS = 1; 
-const int NUMBER_FORBIDDEN_SIGNS = 11;
+const int NUMBER_FORBIDDEN_SIGNS = 14;
 const int NUMBER_OBLIGATORY_SIGNS = 5;
 const int NUMBER_INFORMATION_SIGNS = 1;	
 	
 const char *warning_sign_id_array[NUMBER_WARNING_SIGNS] = {};	
-const char *forbidden_sign_id_array[NUMBER_FORBIDDEN_SIGNS] = { "B2", "C11b", "C13_40", "C13_50", "C13_60", "C13_70", "C13_80", "C13_100", "C13_120", "C14a", "C14b" };
+const char *forbidden_sign_id_array[NUMBER_FORBIDDEN_SIGNS] = { "B2", "C1", "C2", "C11a", "C11b", "C13_40", "C13_50", "C13_60", "C13_70", "C13_80", "C13_100", "C13_120", "C14a", "C14b" };
 const char *obligatory_sign_id_array[NUMBER_OBLIGATORY_SIGNS] = { "D1c", "D3a", "D4", "D8_40", "D8_50" };
 const char *information_sign_id_array[NUMBER_INFORMATION_SIGNS] = { "H7" };
 
