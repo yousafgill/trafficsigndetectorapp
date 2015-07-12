@@ -54,20 +54,7 @@ int testANNImage()
 
 extern "C" {
 	JNIEXPORT void JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_runFannDetector(JNIEnv* env,
-			jobject, jstring dataPath) {
-		
-		/*
-		// Load assets from files
-		AAssetManager* mgr = AAssetManager_fromJava(env, assetManager);
-	    AAsset* asset = AAssetManager_open(mgr, (const char *) "xpto", AASSET_MODE_UNKNOWN);
-	    if (NULL == asset) {
-	        LOG("_ASSET_NOT_FOUND_");
-	    }
-	    long size = AAsset_getLength(asset);
-	    char* buffer = (char*) malloc (sizeof(char)*size);
-	    AAsset_read (asset,buffer,size);
-	    AAsset_close(asset);
-	    */
+			jobject, jstring dataPath) {		
 	    
 	    const char *filename = "forbidden_traffic_signs.net";
 	    const char *assetsDataPath = env->GetStringUTFChars(dataPath, NULL);

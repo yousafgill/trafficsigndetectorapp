@@ -15,11 +15,7 @@
 #include "fann.h"
 #include "floatfann.h"
 
-/*
-#include <sstream>
-#include <fstream>
-#include <iostream>
-*/
+#include "android_fopen.h"
 
 #define DEBUG 1
 

@@ -1,6 +1,7 @@
 /**
  * Traffic Signs Detector
  */
+#include <jni.h>
 #include "sign_detector.h"
 
 const float DETECT_THRESHOLD = 0.8f;
@@ -337,6 +338,7 @@ void loadANNs() {
 	// Load the Artificial Neural Network specific for each sign_type
     // It's more efficient to load the ANN's just once at the begining
     // and destroy them when onDestroy is called
+    
 	//if( NULL == warning_ann ) {
 	//	warning_ann = fann_create_from_file(getANNPath("warning_traffic_signs.net"));
 	//}
@@ -605,24 +607,33 @@ bool isResolutionChanged(int currentWidth) {
 }
 
 extern "C" {
+	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_initTrafficSignsDetector
+		(JNIEnv* env, jobject, jstring dataPath);
+	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_destroyANNs
+		(JNIEnv* env, jobject);
 	JNIEXPORT jobjectArray JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_detectTrafficSigns
-									(JNIEnv* env, jobject, jstring dataPath, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
-		
-		// Initialized fps clock
-		float start = CLOCK();
+		(JNIEnv* env, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS);	
+									
+	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_initTrafficSignsDetector
+		(JNIEnv* env, jobject, jstring dataPath) {
 
+		LOG("Initializing Traffic Sign Detector");
+		
 		// Set Data Path
 		assetsDataPath = (char*)env->GetStringUTFChars(dataPath, NULL);
+				
+		//// get native asset manager. This allows access to files stored in the assets folder
+    	//AAssetManager* manager = AAssetManager_fromJava(env, assetManager);
+    	//assert( NULL != manager);
+    	//
+    	//android_fopen_set_asset_manager(manager);
 		
 		// Load ANN networks from files
 		loadANNs();
 		
-		// Clear previous detected signs
-		clearDetectedSigns();
-		
 		// Set the path where we should store the saved image files
 		// Downloads/trafficsigns_detected shall be used for now
-		if( saveShapes && saveFilesPath == NULL ) {
+		if( saveFilesPath == NULL ) {
 			jclass envClass = env->FindClass("android/os/Environment");
 			jfieldID fieldId = env->GetStaticFieldID(envClass, "DIRECTORY_DOWNLOADS", "Ljava/lang/String;");
 			jstring jstrParam = (jstring)env->GetStaticObjectField(envClass, fieldId);
@@ -634,9 +645,19 @@ extern "C" {
 			jstring extStoragePath = (jstring)env->CallObjectMethod(extStorageFile, getPathMethod);
 			
 			saveFilesPath = env->GetStringUTFChars(extStoragePath,NULL);
-			
-			//LOG("DOWNLOADS DIRECTORY: %s", saveFilesPath);
 		}
+		
+		return 0;
+	};
+
+	JNIEXPORT jobjectArray JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_detectTrafficSigns
+		(JNIEnv* env, jobject, jlong addrRgba, jint option, jboolean saveShapes, jboolean showFPS) {
+		
+		// Initialized fps clock
+		float start = CLOCK();
+		
+		// Clear previous detected signs
+		clearDetectedSigns();		
 
         if( frameCounter == LONG_MAX - 1 )
         	frameCounter = 0;
@@ -796,10 +817,10 @@ extern "C" {
         }
 
  		return signs_detected;
-	}
+	};
 	
 	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_destroyANNs
-									(JNIEnv* env, jobject) {
+		(JNIEnv* env, jobject) {
 		if( NULL == warning_ann ) {
 			fann_destroy(warning_ann);
 		}
@@ -815,5 +836,5 @@ extern "C" {
 		
 		LOG("Destroyed ANNs");
 		return 0;
-	}
+	};
 }

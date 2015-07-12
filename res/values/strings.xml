@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Traffic Signs Detector</string>
+    <string name="app_name">Traffic Signs Detector v2.0</string>
     <string name="hls_view">HLS View</string>
     <string name="color_extraction">Color Extraction</string>
     <string name="canny_conversion">Canny Conversion</string>
@@ -15,5 +15,6 @@
     <string name="disable_shapes_save">Disable Shapes Save</string>
     <string name="show_fps">Show FPS</string>
     <string name="hide_fps">Hide FPS</string>
-    <string name="resolution">Resolution...</string>
+    <string name="resolution">Resolution...</string>    
+    <string name="bluetooth_disabled">Bluetooth is disable. Please enable bluetooth if you want to read speed information.</string>
 </resources>
