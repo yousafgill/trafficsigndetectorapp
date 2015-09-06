@@ -2,6 +2,7 @@ package com.duvallsoftware.trafficsigndetector;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
@@ -11,6 +12,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Locale;
 import java.util.Map;
 
 import org.opencv.android.BaseLoaderCallback;
@@ -45,6 +47,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
+import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -52,6 +55,7 @@ import android.view.SubMenu;
 import android.view.SurfaceView;
 import android.view.WindowManager;
 import android.widget.Toast;
+import android.media.AudioManager;
 
 import com.duvallsoftware.odbhelpers.AbstractGatewayService;
 import com.duvallsoftware.odbhelpers.ConfigActivity;
@@ -66,12 +70,25 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		RoboGuice.setUseAnnotationDatabases(false);
 	}
 
+	private TextToSpeech tts;
+	private boolean isTTSInitialized = false;
+	
 	private static native String[] detectTrafficSigns(long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
 	private static native void initTrafficSignsDetector(String assetsDataPath);
 	private static native void destroyANNs();
 	
 	private static final String TAG = "TrafficSignsDetector::Activity";
 
+	private static final int NUMBER_WARNING_SIGNS = 6; 
+	private static final int NUMBER_FORBIDDEN_SIGNS = 15;
+	private static final int NUMBER_OBLIGATORY_SIGNS = 6;
+	private static final int NUMBER_INFORMATION_SIGNS = 2;	
+		
+	private static final String warning_sign_id_array[] = { "A1a", "A1b", "B1", "B8", "B9a", "B9b" };	
+	private static final String forbidden_sign_id_array[] = { "B2", "C1", "C2", "C11a", "C11b", "C13_40", "C13_50", "C13_60", "C13_70", "C13_80", "C13_90", "C13_100", "C13_120", "C14a", "C14b" };
+	private static final String obligatory_sign_id_array[] = { "D1a", "D1c", "D3a", "D4", "D8_40", "D8_50" };
+	private static final String information_sign_id_array[] = { "B6", "H7" };
+	
 	private static final int NO_SIGN = 0;
 	private static final int WARNING_SIGN = 1;
 	private static final int FORBIDDEN_SIGN = 2;
@@ -144,6 +161,8 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	
 					// Load native library after(!) OpenCV initialization
 					System.loadLibrary("gnustl_shared");
+//					System.loadLibrary("lept");
+//					System.loadLibrary("tess");					
 					System.loadLibrary("sign_detector");
 	
 					mOpenCvCameraView.enableView();
@@ -184,14 +203,24 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		if (!path.exists()) {
 			path.mkdirs();
 			// initiate media scan and put the new things into the path array to
-			// make the scanner aware of the location and the files you want to
-			// see
+			// make the scanner aware of the location and the files you want to see
 			MediaScannerConnection.scanFile(this, new String[] { path.toString() }, null, null);
 		}
 
+		assetManager = getApplicationContext().getAssets();
+		
 		sharedpreferences = getSharedPreferences("TrafficSignDetectionPrefs", Context.MODE_PRIVATE);
 		assetsDataPath = getApplicationContext().getFilesDir().getPath();
 
+		copyANNFilesToAssetPath();
+
+		final BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
+		if (btAdapter != null)
+			bluetoothDefaultIsEnable = btAdapter.isEnabled();
+	}
+	
+	private void copyANNFilesToAssetPath() {
+		// Copy ANN files to asset path available from JNI context
 		String obligatoryANN = "obligatory_traffic_signs.net";
 		String obligatoryDataANN = assetsDataPath + File.separator + obligatoryANN;
 
@@ -200,46 +229,134 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 
 		String forbiddenANN = "forbidden_traffic_signs.net";
 		String forbiddenDataANN = assetsDataPath + File.separator + forbiddenANN;
-
-		assetManager = getApplicationContext().getAssets();
+		
+		String warningANN = "warning_traffic_signs.net";
+		String warningDataANN = assetsDataPath + File.separator + warningANN;		
 
 		copyAsset(obligatoryANN, obligatoryDataANN);
 		copyAsset(informationANN, informationDataANN);
 		copyAsset(forbiddenANN, forbiddenDataANN);
-
-		final BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
-		if (btAdapter != null)
-			bluetoothDefaultIsEnable = btAdapter.isEnabled();
+		copyAsset(warningANN, warningDataANN);		
+		
+		String suffix = "_traffic_signs.net";
+		for(int i=0;i<NUMBER_WARNING_SIGNS;i++) {			
+			StringBuilder annName = new StringBuilder();
+			annName.append(warning_sign_id_array[i]);
+			annName.append(suffix);
+			
+			try {
+				String annPath = assetsDataPath + File.separator + annName.toString();
+				copyAsset(annName.toString(), annPath);
+			} catch(Exception e) {
+				Log.e(TAG, "Exception initializing " + annName.toString() + " ANN from file: " + e.getMessage());
+			}
+		}
+		
+		for(int i=0;i<NUMBER_FORBIDDEN_SIGNS;i++) {
+			StringBuilder annName = new StringBuilder();
+			annName.append(forbidden_sign_id_array[i]);
+			annName.append(suffix);
+			
+			try {
+				String annPath = assetsDataPath + File.separator + annName.toString();
+				copyAsset(annName.toString(), annPath);
+			} catch(Exception e) {
+				Log.e(TAG, "Exception initializing " + annName.toString() + " ANN from file: " + e.getMessage());
+			}
+		}
+		
+		for(int i=0;i<NUMBER_OBLIGATORY_SIGNS;i++) {
+			StringBuilder annName = new StringBuilder();
+			annName.append(obligatory_sign_id_array[i]);
+			annName.append(suffix);
+			
+			try {
+				String annPath = assetsDataPath + File.separator + annName.toString();
+				copyAsset(annName.toString(), annPath);
+			} catch(Exception e) {
+				Log.e(TAG, "Exception initializing " + annName.toString() + " ANN from file: " + e.getMessage());
+			}
+		}
+		
+		for(int i=0;i<NUMBER_INFORMATION_SIGNS;i++) {
+			StringBuilder annName = new StringBuilder();
+			annName.append(information_sign_id_array[i]);
+			annName.append(suffix);
+			
+			try {
+				String annPath = assetsDataPath + File.separator + annName.toString();
+				copyAsset(annName.toString(), annPath);
+			} catch(Exception e) {
+				Log.e(TAG, "Exception initializing " + annName.toString() + " ANN from file: " + e.getMessage());
+			}
+		}
+	}
+	
+	private void initializeOCR() {
+		String str = getApplicationInfo().dataDir;
+		File localFile = new File(str, "tessdata");
+		if (!localFile.isDirectory()) {
+			localFile.mkdir();
+		}
+		try {
+			InputStream is = getAssets().open("eng.traineddata");
+			FileOutputStream os = new FileOutputStream(str + "/tessdata/eng.traineddata");
+			byte[] arrayOfByte = new byte[1024];
+			for (;;) {
+				int i = is.read(arrayOfByte);
+				if (i <= 0) {
+					is.close();
+					os.close();
+					return;
+				}
+				os.write(arrayOfByte, 0, i);
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 
-	private void updateSpeed(final ObdCommandJob job) {
-		// cmdID.equals(AvailableCommandNames.SPEED.toString());
-		SpeedObdCommand command = (SpeedObdCommand) job.getCommand();
-		currentSpeed = command.getMetricSpeed();
+	private void initializeTTS() {
+		tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+			@SuppressWarnings("deprecation")
+			public void onInit(int paramAnonymousInt) {
+				if (paramAnonymousInt == 0) {
+					isTTSInitialized = true;
+					if (tts.isLanguageAvailable(Locale.US) >= 0) {
+						tts.setLanguage(Locale.US);
+					}
+
+					((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
+					tts.speak("road sign recognition free started", 1, null);
+					return;
+				}
+				isTTSInitialized = false;
+			}
+		});
 	}
 
 	private void copyAsset(String srcAsset, String dst) {
-		// File f = new File(dst);
-		// if(!f.exists()) {
-		if (assetManager == null) {
-			assetManager = getApplicationContext().getAssets();
-		}
-		try {
-			InputStream is = assetManager.open(srcAsset);
-			OutputStream os = new FileOutputStream(dst);
-
-			byte[] buffer = new byte[4096];
-			while (is.read(buffer) > 0) {
-				os.write(buffer);
+		File f = new File(dst);
+		//if(!f.exists()) {
+			if (assetManager == null) {
+				assetManager = getApplicationContext().getAssets();
 			}
-
-			os.flush();
-			os.close();
-			is.close();
-		} catch (Exception e1) {
-			e1.printStackTrace();
-		}
-		// }
+			try {
+				InputStream is = assetManager.open(srcAsset);
+				OutputStream os = new FileOutputStream(dst);
+	
+				byte[] buffer = new byte[4096];
+				while (is.read(buffer) > 0) {
+					os.write(buffer);
+				}
+	
+				os.flush();
+				os.close();
+				is.close();
+			} catch (Exception e1) {
+				e1.printStackTrace();
+			}
+		//}
 	}
 
 	@Override
@@ -334,6 +451,12 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 
 	public void onCameraViewStarted(int width, int height) {
 		Log.i(TAG, "called onCameraViewStarted");
+		
+		if(mOpenCvCameraView == null) {
+			Log.e(TAG, "mOpenCvCameraView is NULL");
+			return;
+		}
+		
 		mResolutionList = mOpenCvCameraView.getResolutionList();
 
 		if (mResolutionList != null && mResolutionList.size() > 0 && !sharedpreferences.contains(resolutionWidthPref)) {
@@ -564,6 +687,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		return true;
 	}	
 
+	@SuppressWarnings("unused")
 	private class DetectedSign {
 
 		private String signId = null;
@@ -584,7 +708,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		/**
 		 * @param detectedTimestamp
 		 *            the detectedTimestamp to set
-		 */
+		 */		
 		public void setDetectedTimestamp(long detectedTimestamp) {
 			this.detectedTimestamp = detectedTimestamp;
 		}
@@ -609,6 +733,12 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	private SharedPreferences prefs;
 	public Map<String, String> commandResult = new HashMap<String, String>();
 
+	private void updateSpeed(final ObdCommandJob job) {
+		// cmdID.equals(AvailableCommandNames.SPEED.toString());
+		SpeedObdCommand command = (SpeedObdCommand) job.getCommand();
+		currentSpeed = command.getMetricSpeed();
+	}
+	
 	public static String LookUpCommand(String txt) {
 		for (AvailableCommandNames item : AvailableCommandNames.values()) {
 			if (item.getValue().equals(txt))

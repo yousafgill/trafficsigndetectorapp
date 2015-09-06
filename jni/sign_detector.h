@@ -17,6 +17,9 @@
 
 #include "android_fopen.h"
 
+//#include <baseapi.h>
+//#include <allheaders.h>
+
 #define DEBUG 1
 
 #define  LOG_TAG "SIGN DETECTOR JNI"

@@ -4,30 +4,30 @@
 #include <jni.h>
 #include "sign_detector.h"
 
-const float DETECT_THRESHOLD = 0.8f;
+const float DETECT_THRESHOLD = 0.90f;
 
-const int NUMBER_WARNING_SIGNS = 1; 
-const int NUMBER_FORBIDDEN_SIGNS = 14;
-const int NUMBER_OBLIGATORY_SIGNS = 5;
-const int NUMBER_INFORMATION_SIGNS = 1;	
+const int NUMBER_WARNING_SIGNS = 6; 
+const int NUMBER_FORBIDDEN_SIGNS = 15;
+const int NUMBER_OBLIGATORY_SIGNS = 6;
+const int NUMBER_INFORMATION_SIGNS = 2;	
 	
-const char *warning_sign_id_array[NUMBER_WARNING_SIGNS] = {};	
-const char *forbidden_sign_id_array[NUMBER_FORBIDDEN_SIGNS] = { "B2", "C1", "C2", "C11a", "C11b", "C13_40", "C13_50", "C13_60", "C13_70", "C13_80", "C13_100", "C13_120", "C14a", "C14b" };
-const char *obligatory_sign_id_array[NUMBER_OBLIGATORY_SIGNS] = { "D1c", "D3a", "D4", "D8_40", "D8_50" };
-const char *information_sign_id_array[NUMBER_INFORMATION_SIGNS] = { "H7" };
+const char *warning_sign_id_array[NUMBER_WARNING_SIGNS] = { "A1a", "A1b", "B1", "B8", "B9a", "B9b" };	
+const char *forbidden_sign_id_array[NUMBER_FORBIDDEN_SIGNS] = { "B2", "C1", "C2", "C11a", "C11b", "C13_40", "C13_50", "C13_60", "C13_70", "C13_80", "C13_90", "C13_100", "C13_120", "C14a", "C14b" };
+const char *obligatory_sign_id_array[NUMBER_OBLIGATORY_SIGNS] = { "D1a", "D1c", "D3a", "D4", "D8_40", "D8_50" };
+const char *information_sign_id_array[NUMBER_INFORMATION_SIGNS] = { "B6", "H7" };
 
 const int NUM_RANGES = 7;
 cv::Mat colorRangesMat[NUM_RANGES];
 
 cv::Scalar colorRanges[NUM_RANGES][2] = {
-	{ cv::Scalar(0, 40, 50), cv::Scalar(10, 195, 255) }, //RED
-	{ cv::Scalar(170, 30, 50), cv::Scalar(180, 195, 255) }, //RED
+	{ cv::Scalar(0, 24, 50), cv::Scalar(10, 195, 255) }, //RED
+	{ cv::Scalar(170, 24, 50), cv::Scalar(180, 195, 255) }, //RED
 	{ cv::Scalar(110, 24, 24), cv::Scalar(153, 62, 85) }, //RED
 
 	{ cv::Scalar(100, 63, 166), cv::Scalar(132, 103, 255) }, //BLUE
 	{ cv::Scalar(100, 105, 105), cv::Scalar(132, 170, 180) }, //BLUE
 	{ cv::Scalar(100, 105, 106), cv::Scalar(132, 170, 255) }, //BLUE
-	{ cv::Scalar(100, 30, 204), cv::Scalar(132, 170, 255) } //BLUE
+	{ cv::Scalar(100, 24, 204), cv::Scalar(132, 170, 255) } //BLUE
 };
 
 int savedWidth = 0;
@@ -62,6 +62,11 @@ struct fann *warning_ann = NULL;
 struct fann *forbidden_ann = NULL;
 struct fann *obligatory_ann = NULL;
 struct fann *information_ann = NULL;
+
+struct fann *single_warning_ann[NUMBER_WARNING_SIGNS];
+struct fann *single_forbidden_ann[NUMBER_FORBIDDEN_SIGNS];
+struct fann *single_obligatory_ann[NUMBER_OBLIGATORY_SIGNS];
+struct fann *single_information_ann[NUMBER_INFORMATION_SIGNS];
 
 float CLOCK()
 {
@@ -206,7 +211,6 @@ void setDetectedSignType(int sign_type) {
 	time_since_last_detection = ms.count();
 
 	detected_traffic_signs[tsr_idx].type = sign_type;
-	//detected_sign_type = sign_type;
 }
 
 void getFixedSizeImagefromRectangle(cv::Mat *previewFrame, cv::Mat *dst, cv::Rect rect) {
@@ -262,9 +266,6 @@ void writeShapeFound(cv::Mat* image) {
 		bool res = cv::imwrite(shapeFileName.str(), *(Mat*)image, compression_params);
 		if( !res ) {
 			LOG("Failed to write image %s to SDCard\n", shapeFileName.str().c_str());
-		}
-		else {
-			//LOG("Successfuly wrote image %s to SDCard\n", shapeFileName.str().c_str());
 		}
 	}
 	catch (std::exception& ex) {
@@ -334,23 +335,52 @@ char * getANNPath(const char *filename) {
     return file_data_path;
 }
 
-void loadANNs() {
-	// Load the Artificial Neural Network specific for each sign_type
-    // It's more efficient to load the ANN's just once at the begining
-    // and destroy them when onDestroy is called
+int runSingleSignFannDetector(int sign_type, int detectedSignal, fann_type inputs[]) {
+	int result = -1;
+	
+	fann_type *calc_out;
+    struct fann *ann = NULL;
     
-	//if( NULL == warning_ann ) {
-	//	warning_ann = fann_create_from_file(getANNPath("warning_traffic_signs.net"));
-	//}
-	if( NULL == forbidden_ann ) {
-		forbidden_ann = fann_create_from_file(getANNPath("forbidden_traffic_signs.net"));
-	}
-	if( NULL == obligatory_ann ) {
-		obligatory_ann = fann_create_from_file(getANNPath("obligatory_traffic_signs.net"));
-	}
-	if( NULL == information_ann ) {
-		information_ann = fann_create_from_file(getANNPath("information_traffic_signs.net"));
-	}
+    if( sign_type == WARNING_SIGN ) {
+    	ann = single_warning_ann[detectedSignal];    	
+    }
+    else if( sign_type == FORBIDDEN_SIGN ) {
+    	ann = single_forbidden_ann[detectedSignal];
+    }
+    else if( sign_type == OBLIGATORY_SIGN ) {
+    	ann = single_obligatory_ann[detectedSignal];
+    }
+    else if( sign_type == INFORMATION_SIGN ) {
+    	ann = single_information_ann[detectedSignal];
+    }
+    
+    if( NULL != ann) {
+    	//LOG("Running ANN ...");
+	    calc_out = fann_run(ann, inputs);
+	    //LOG("Running ANN DONE");
+	    	    
+	    //LOG("OUTPUTS: %i", ann->num_output);
+	    float max = -1.0f;
+	    int idx = -1;
+	    
+	    for(int i=0;i<ann->num_output;i++) {
+		    if(calc_out[i] > (DETECT_THRESHOLD + 0.05) ) {
+			    if( calc_out[i] > max ) {
+			    	max = calc_out[i];
+			    	idx = i;
+			    }		    	
+	    	}
+	    }
+	    
+	    if( max > 0) {
+			// Return the previously detected signal because the ANN returns positive match
+	    	result = detectedSignal;
+		    LOG("SIGNAL_TYPE: %d, DETECTED_SIGNAL: %d, ANN_VALUE: %f", sign_type, detectedSignal, max);
+		}
+    }
+    
+    // Result will have the detected sign id
+    return result;
 }
 
 int runFannDetector(int sign_type, fann_type inputs[]) {
@@ -360,7 +390,7 @@ int runFannDetector(int sign_type, fann_type inputs[]) {
     struct fann *ann = NULL;
     
     if( sign_type == WARNING_SIGN ) {
-    	//ann = warning_ann;    	
+    	ann = warning_ann;    	
     }
     else if( sign_type == FORBIDDEN_SIGN ) {
     	ann = forbidden_ann;
@@ -434,7 +464,33 @@ int testShapeFound(cv::Mat* frame, cv::Rect rect, int sign_type)
 		inputs[idx + 3 + size] = HH[v];
 	}
 	
-	return runFannDetector(sign_type, inputs);
+	int detectedSignal = runFannDetector(sign_type, inputs);
+	
+	/*
+	if(sign_type == FORBIDDEN_SIGN && detectedSignal >= 5 && detectedSignal <= 12){
+		// Pass it to Tesseract API
+		tesseract::TessBaseAPI *tess = new tesseract::TessBaseAPI();
+	    if(tess->Init(NULL, "eng")) {
+	    	LOG("Could not initialize tesseract.\n");
+        	return -1;
+	    }
+	    tess->setVariable("tessedit_char_whitelist", "0123456789");
+	    tess->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
+	    tess->SetImage((uchar*)b_matrix.data, b_matrix.cols, b_matrix.rows, 1, b_matrix.cols);
+
+	    // Get the text
+	    char* outText = tess->GetUTF8Text(NULL);
+	    LOG("Tesseract: [%s]", outText);
+	}
+	*/
+
+	// TODO: UNCOMMENT TO ENABLE SECONDARY ANN USE FOR DETECTION
+	if( detectedSignal >= 0 ) {
+		//return testShapeFoundWithSecondaryAnns(frame, rect, sign_type, detectedSignal);
+		return runSingleSignFannDetector(sign_type, detectedSignal, inputs);
+	}
+	
+	return detectedSignal;
 }
 
 void findShapes(cv::Mat previewFrame, cv::Mat frame, cv::Mat canny, bool saveShapes) {
@@ -606,6 +662,99 @@ bool isResolutionChanged(int currentWidth) {
 	return false;
 }
 
+void initializeANNs() {
+	for(int i=0;i<NUMBER_WARNING_SIGNS;i++) {
+		single_warning_ann[i] = NULL;
+	}
+	for(int i=0;i<NUMBER_FORBIDDEN_SIGNS;i++) {
+		single_forbidden_ann[i] = NULL;
+	}
+	for(int i=0;i<NUMBER_OBLIGATORY_SIGNS;i++) {
+		single_obligatory_ann[i] = NULL;
+	}
+	for(int i=0;i<NUMBER_INFORMATION_SIGNS;i++) {
+		single_information_ann[i] = NULL;
+	}
+}
+
+void loadANNs() {
+	// Load the Artificial Neural Network specific for each sign_type
+    // It's more efficient to load the ANN's just once at the begining
+    // and destroy them when onDestroy is called
+    
+	if( NULL == warning_ann ) {
+		warning_ann = fann_create_from_file(getANNPath("warning_traffic_signs.net"));
+	}
+	if( NULL == forbidden_ann ) {
+		forbidden_ann = fann_create_from_file(getANNPath("forbidden_traffic_signs.net"));
+	}
+	if( NULL == obligatory_ann ) {
+		obligatory_ann = fann_create_from_file(getANNPath("obligatory_traffic_signs.net"));
+	}
+	if( NULL == information_ann ) {
+		information_ann = fann_create_from_file(getANNPath("information_traffic_signs.net"));
+	}
+	
+	// Load the Artificial Neural Network specific for each sign
+	// These ANN's will be used to confirm the sign detected in the first step with the "sign type" ANN's
+	for(int i=0;i<NUMBER_WARNING_SIGNS;i++) {
+		const char *suffix = "_traffic_signs.net";
+		const char *prefix = warning_sign_id_array[i];
+		char ann_name[strlen(suffix) + strlen(prefix) + 1];
+		try {
+			strcpy(ann_name, prefix);
+			strcat(ann_name, suffix);
+			 
+			single_warning_ann[i] = fann_create_from_file(getANNPath(ann_name));
+		} catch(std::exception& ex) {
+			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
+			single_warning_ann[i] = NULL;
+		}
+	}
+	for(int i=0;i<NUMBER_FORBIDDEN_SIGNS;i++) {		
+		const char *suffix = "_traffic_signs.net";
+		const char *prefix = forbidden_sign_id_array[i];
+		char ann_name[strlen(suffix) + strlen(prefix) + 1];
+		try {
+			strcpy(ann_name, prefix);
+			strcat(ann_name, suffix);
+			 
+			single_forbidden_ann[i] = fann_create_from_file(getANNPath(ann_name));
+		} catch(std::exception& ex) {
+			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
+			single_forbidden_ann[i] = NULL;
+		}
+	}
+	for(int i=0;i<NUMBER_OBLIGATORY_SIGNS;i++) {
+		const char *suffix = "_traffic_signs.net";
+		const char *prefix = obligatory_sign_id_array[i];
+		char ann_name[strlen(suffix) + strlen(prefix) + 1];
+		try {
+			strcpy(ann_name, prefix);
+			strcat(ann_name, suffix);
+			 
+			single_obligatory_ann[i] = fann_create_from_file(getANNPath(ann_name));
+		} catch(std::exception& ex) {
+			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
+			single_obligatory_ann[i] = NULL;
+		}
+	}
+	for(int i=0;i<NUMBER_INFORMATION_SIGNS;i++) {
+		const char *suffix = "_traffic_signs.net";
+		const char *prefix = information_sign_id_array[i];
+		char ann_name[strlen(suffix) + strlen(prefix) + 1];
+		try {
+			strcpy(ann_name, prefix);
+			strcat(ann_name, suffix);
+			 
+			single_information_ann[i] = fann_create_from_file(getANNPath(ann_name));
+		} catch(std::exception& ex) {
+			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
+			single_information_ann[i] = NULL;
+		}
+	}
+}
+
 extern "C" {
 	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_initTrafficSignsDetector
 		(JNIEnv* env, jobject, jstring dataPath);
@@ -622,11 +771,7 @@ extern "C" {
 		// Set Data Path
 		assetsDataPath = (char*)env->GetStringUTFChars(dataPath, NULL);
 				
-		//// get native asset manager. This allows access to files stored in the assets folder
-    	//AAssetManager* manager = AAssetManager_fromJava(env, assetManager);
-    	//assert( NULL != manager);
-    	//
-    	//android_fopen_set_asset_manager(manager);
+		initializeANNs();
 		
 		// Load ANN networks from files
 		loadANNs();
@@ -753,21 +898,6 @@ extern "C" {
 			return (jobjectArray)env->NewObjectArray(0, env->FindClass("java/lang/String"), env->NewStringUTF(""));;
 		}
 		
-		/*
-		if( detected_sign_type != NO_SIGN ) {
-			// Get current time in milliseconds
-			milliseconds ms = duration_cast< milliseconds >(
-		    	high_resolution_clock::now().time_since_epoch()
-			);
-			
-			// X seconds after the last detected sign set the detection to NO_SIGN
-			if( ((long)ms.count() - time_since_last_detection) > SIGNAL_DETECTION_MESSAGE_TIMEOUT ) {
-				detected_sign_type = NO_SIGN;
-				detected_sign = NO_SIGN;
-			}
-		}
-		*/
-		
 		findShapes(previewFrame, frame, resultMat, saveShapes);			
         
         if( showFPS ) {
@@ -790,25 +920,21 @@ extern "C" {
 				switch(detected_traffic_signs[i].type) {
 		        	case WARNING_SIGN:
 		        		if( detected_traffic_signs[i].id < NUMBER_WARNING_SIGNS ) {
-		        			//return env->NewStringUTF(warning_sign_id_array[detected_traffic_signs[i].id]);
 		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(warning_sign_id_array[detected_traffic_signs[i].id]));
 		        		}
 		        		break;
 		        	case FORBIDDEN_SIGN:
 		        		if( detected_traffic_signs[i].id < NUMBER_FORBIDDEN_SIGNS ) {
-		        			//return env->NewStringUTF(forbidden_sign_id_array[detected_traffic_signs[i].id]);
 		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(forbidden_sign_id_array[detected_traffic_signs[i].id]));
 		        		}	        		
 		        		break;
 		        	case OBLIGATORY_SIGN:
 		        		if( detected_traffic_signs[i].id < NUMBER_OBLIGATORY_SIGNS ) {
-		        			//return env->NewStringUTF(obligatory_sign_id_array[detected_traffic_signs[i].id]);
 		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(obligatory_sign_id_array[detected_traffic_signs[i].id]));
 		        		}	        		
 		        		break;
 		        	case INFORMATION_SIGN:
 		        		if( detected_traffic_signs[i].id < NUMBER_INFORMATION_SIGNS ) {
-		        			//return env->NewStringUTF(information_sign_id_array[detected_traffic_signs[i].id]);
 		        			env->SetObjectArrayElement(signs_detected,i,env->NewStringUTF(information_sign_id_array[detected_traffic_signs[i].id]));
 		        		}	        		
 		        		break;
@@ -821,17 +947,41 @@ extern "C" {
 	
 	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_destroyANNs
 		(JNIEnv* env, jobject) {
-		if( NULL == warning_ann ) {
+		if( NULL != warning_ann ) {
 			fann_destroy(warning_ann);
 		}
-		if( NULL == forbidden_ann ) {
+		if( NULL != forbidden_ann ) {
 			fann_destroy(forbidden_ann);
 		}
-		if( NULL == obligatory_ann ) {
+		if( NULL != obligatory_ann ) {
 			fann_destroy(obligatory_ann);
 		}
-		if( NULL == information_ann ) {
+		if( NULL != information_ann ) {
 			fann_destroy(information_ann);
+		}
+		
+		for(int i=0;i<NUMBER_WARNING_SIGNS;i++) {
+			if( NULL != single_warning_ann[i] ) {
+				fann_destroy(single_warning_ann[i]);
+			}
+		}
+
+		for(int i=0;i<NUMBER_FORBIDDEN_SIGNS;i++) {
+			if( NULL != single_forbidden_ann[i] ) {
+				fann_destroy(single_forbidden_ann[i]);
+			}
+		}
+
+		for(int i=0;i<NUMBER_OBLIGATORY_SIGNS;i++) {
+			if( NULL != single_obligatory_ann[i] ) {
+				fann_destroy(single_obligatory_ann[i]);
+			}
+		}
+
+		for(int i=0;i<NUMBER_INFORMATION_SIGNS;i++) {
+			if( NULL != single_information_ann[i] ) {
+				fann_destroy(single_information_ann[i]);
+			}
 		}
 		
 		LOG("Destroyed ANNs");
