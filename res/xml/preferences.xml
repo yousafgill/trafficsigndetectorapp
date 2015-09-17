@@ -17,6 +17,35 @@
             android:title="Bluetooth Devices" />
     </PreferenceCategory>
     <PreferenceCategory
+        android:title="Camera preferences">
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dialogTitle="Show FPS"
+            android:key="show_fps_preference"
+            android:summaryOff="Frames per second are not visible"
+            android:summaryOn="Frames per second are visible"
+            android:title="Show FPS" />
+        <EditTextPreference
+            android:positiveButtonText="Ok"
+            android:negativeButtonText="Cancel" 
+            android:defaultValue="0"
+            android:dialogTitle="Zoom Level"
+            android:key="camera_zoom_preference"
+            android:title="Zoom Level" />
+        <ListPreference
+            android:dialogTitle="Camera Resolution"
+            android:key="camera_resolution_list_preference"
+            android:summary="List of supported camera resolutions."
+            android:title="Camera Resolution" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dialogTitle="Save Captured Images"
+            android:key="save_captured_images_preference"
+            android:summaryOff="Save Captured Images disabled"
+            android:summaryOn="Save Captured Images enabled"
+            android:title="Save Captured Images" />
+    </PreferenceCategory>
+    <PreferenceCategory
         android:title="OBD Preferences">
         <ListPreference
             android:defaultValue="AUTO"
@@ -37,29 +66,5 @@
             android:key="obd_update_period_preference"
             android:summary="The length of time between querying vehicle data in seconds"
             android:title="Update Period in Seconds" />
-        <EditTextPreference
-            android:defaultValue="70"
-            android:dialogTitle="Maximum Fuel Economy Value"
-            android:key="max_fuel_econ_preference"
-            android:summary="Any fuel economy values larger than this will be thrown out"
-            android:title="Maximum Fuel Economy Value" />
-        <EditTextPreference
-            android:defaultValue=".85"
-            android:dialogTitle="Volumetric Efficiency (eg 0.85)"
-            android:key="volumetric_efficiency_preference"
-            android:summary="Used for fuel economy on vehicles without MAF sensor"
-            android:title="Volumetric Efficiency" />
-        <EditTextPreference
-            android:defaultValue="1.6"
-            android:dialogTitle="Engine Displacement (liters)"
-            android:key="engine_displacement_preference"
-            android:summary="Used for fuel economy on vehicles without MAF sensor"
-            android:title="Engine Displacement (liters)" />
-        <EditTextPreference
-            android:defaultValue="atsp0\natz"
-            android:dialogTitle="Reader Config Commands"
-            android:key="reader_config_preference"
-            android:summary="Commands to configure bluetooth reader, separate with new line"
-            android:title="Reader Config Commands" />
     </PreferenceCategory>
 </PreferenceScreen>

@@ -1,6 +1,8 @@
 package com.duvallsoftware.odbhelpers;
 
 import java.util.ArrayList;
+import java.util.List;
+import java.util.ListIterator;
 import java.util.Set;
 
 import pt.lighthouselabs.obd.commands.ObdCommand;
@@ -10,6 +12,9 @@ import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.SharedPreferences;
+import android.hardware.Camera;
+import android.hardware.Camera.Size;
+import android.net.TrafficStats;
 import android.os.Bundle;
 import android.preference.EditTextPreference;
 import android.preference.ListPreference;
@@ -17,9 +22,14 @@ import android.preference.Preference;
 import android.preference.Preference.OnPreferenceChangeListener;
 import android.preference.Preference.OnPreferenceClickListener;
 import android.preference.PreferenceActivity;
+import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.widget.Toast;
 
+import com.duvallsoftware.trafficsigndetector.CameraView;
 import com.duvallsoftware.trafficsigndetector.R;
+import com.duvallsoftware.trafficsigndetector.TrafficSignDetectorActivity;
 
 /**
  * This class uses some base code from the OBD Reader application from
@@ -31,27 +41,30 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 	public static final String OBD_UPDATE_PERIOD_KEY = "obd_update_period_preference";
 	public static final String PROTOCOLS_LIST_KEY = "obd_protocols_preference";
 	public static final String ENABLE_BT_KEY = "enable_bluetooth_preference";
-	public static final String CONFIG_READER_KEY = "reader_config_preference";
 	public static final String IMPERIAL_UNITS_KEY = "imperial_units_preference";
-
+	public static final String CAMERA_RESOLUTION_LIST_KEY = "camera_resolution_list_preference";
+	public static final String CAMERA_ZOOM_KEY = "camera_zoom_preference";
+	public static final String SAVE_IMAGES_KEY = "save_captured_images_preference";
+	public static final String SHOW_FPS_KEY = "show_fps_preference";
+	
 	/**
 	 * @param prefs
 	 * @return
 	 */
 	public static int getObdUpdatePeriod(SharedPreferences prefs) {
 		// In seconds
-		String periodString = prefs.getString(ConfigActivity.OBD_UPDATE_PERIOD_KEY, "4");
-		int period = 4000; // by default 4000ms
-
-		try {
-			period = Integer.parseInt(periodString) * 1000;
-		} catch (Exception e) {
+		int period = 4000; //milliseconds
+		if( prefs != null) {		
+			String periodString = prefs.getString(ConfigActivity.OBD_UPDATE_PERIOD_KEY, "4"); //seconds
+			try {
+				period = Integer.parseInt(periodString) * 1000;
+			} catch (Exception e) {
+			}
+	
+			if (period <= 0) {
+				period = 250;
+			}
 		}
-
-		if (period <= 0) {
-			period = 250;
-		}
-
 		return period;
 	}
 
@@ -65,21 +78,9 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 		ArrayList<ObdCommand> ucmds = new ArrayList<ObdCommand>();
 		for (int i = 0; i < cmds.size(); i++) {
 			ObdCommand cmd = cmds.get(i);
-			boolean selected = prefs.getBoolean(cmd.getName(), true);
-			if (selected)
-				ucmds.add(cmd);
+			ucmds.add(cmd);
 		}
 		return ucmds;
-	}
-
-	/**
-	 * @param prefs
-	 * @return
-	 */
-	public static String[] getReaderConfigCommands(SharedPreferences prefs) {
-		String cmdsStr = prefs.getString(CONFIG_READER_KEY, "atsp0\natz");
-		String[] cmds = cmdsStr.split("\n");
-		return cmds;
 	}
 
 	public void onCreate(Bundle savedInstanceState) {
@@ -92,32 +93,48 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 
 		ArrayList<CharSequence> pairedDeviceStrings = new ArrayList<CharSequence>();
 		ArrayList<CharSequence> vals = new ArrayList<CharSequence>();
-		ListPreference listBtDevices = (ListPreference) getPreferenceScreen().findPreference(BLUETOOTH_LIST_KEY);
+		ListPreference btDevicesList = (ListPreference) getPreferenceScreen().findPreference(BLUETOOTH_LIST_KEY);
 		ArrayList<CharSequence> protocolStrings = new ArrayList<CharSequence>();
-		ListPreference listProtocols = (ListPreference) getPreferenceScreen().findPreference(PROTOCOLS_LIST_KEY);
+		ListPreference protocolsList = (ListPreference) getPreferenceScreen().findPreference(PROTOCOLS_LIST_KEY);
 		String[] prefKeys = new String[] { OBD_UPDATE_PERIOD_KEY };
 		for (String prefKey : prefKeys) {
 			EditTextPreference txtPref = (EditTextPreference) getPreferenceScreen().findPreference(prefKey);
 			txtPref.setOnPreferenceChangeListener(this);
 		}
-
+		
+		/*
+		 * Available Camera Resolutions
+		 */
+		ArrayList<CharSequence> resolutionStrings = new ArrayList<CharSequence>();
+		ArrayList<CharSequence> resolutionValues = new ArrayList<CharSequence>();
+		ListPreference resolutionsList = (ListPreference) getPreferenceScreen().findPreference(CAMERA_RESOLUTION_LIST_KEY);
+		List<Size> resList = TrafficSignDetectorActivity.getCameraResolutionsList();
+		ListIterator<Size> resolutionItr = resList.listIterator();
+		while (resolutionItr.hasNext()) {
+			Size element = resolutionItr.next();
+			resolutionStrings.add(Integer.valueOf(element.width).toString() + "x" + Integer.valueOf(element.height).toString());
+			resolutionValues.add(Integer.valueOf(element.width).toString());
+		}
+		resolutionsList.setEntries(resolutionStrings.toArray(new CharSequence[0]));
+		resolutionsList.setEntryValues(resolutionValues.toArray(new CharSequence[0]));
+		
 		/*
 		 * Available OBD protocols
 		 */
 		for (ObdProtocols protocol : ObdProtocols.values()) {
 			protocolStrings.add(protocol.name());
 		}
-		listProtocols.setEntries(protocolStrings.toArray(new CharSequence[0]));
-		listProtocols.setEntryValues(protocolStrings.toArray(new CharSequence[0]));
-
+		protocolsList.setEntries(protocolStrings.toArray(new CharSequence[0]));
+		protocolsList.setEntryValues(protocolStrings.toArray(new CharSequence[0]));		
+		
 		/*
 		 * Let's use this device Bluetooth adapter to select which paired OBD-II
 		 * compliant device we'll use.
 		 */
 		final BluetoothAdapter mBtAdapter = BluetoothAdapter.getDefaultAdapter();
 		if (mBtAdapter == null) {
-			listBtDevices.setEntries(pairedDeviceStrings.toArray(new CharSequence[0]));
-			listBtDevices.setEntryValues(vals.toArray(new CharSequence[0]));
+			btDevicesList.setEntries(pairedDeviceStrings.toArray(new CharSequence[0]));
+			btDevicesList.setEntryValues(vals.toArray(new CharSequence[0]));
 
 			// we shouldn't get here, still warn user
 			Toast.makeText(this, "This device does not support Bluetooth.", Toast.LENGTH_LONG).show();
@@ -127,13 +144,11 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 
 		/*
 		 * Listen for preferences click.
-		 * 
-		 * TODO there are so many repeated validations :-/
 		 */
 		final Activity thisActivity = this;
-		listBtDevices.setEntries(new CharSequence[1]);
-		listBtDevices.setEntryValues(new CharSequence[1]);
-		listBtDevices.setOnPreferenceClickListener(new OnPreferenceClickListener() {
+		btDevicesList.setEntries(new CharSequence[1]);
+		btDevicesList.setEntryValues(new CharSequence[1]);
+		btDevicesList.setOnPreferenceClickListener(new OnPreferenceClickListener() {
 			public boolean onPreferenceClick(Preference preference) {
 				if (mBtAdapter == null || !mBtAdapter.isEnabled()) {
 					Toast.makeText(thisActivity, "This device does not support Bluetooth or it is disabled.",
@@ -154,10 +169,10 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 				vals.add(device.getAddress());
 			}
 		}
-		listBtDevices.setEntries(pairedDeviceStrings.toArray(new CharSequence[0]));
-		listBtDevices.setEntryValues(vals.toArray(new CharSequence[0]));
+		btDevicesList.setEntries(pairedDeviceStrings.toArray(new CharSequence[0]));
+		btDevicesList.setEntryValues(vals.toArray(new CharSequence[0]));
 	}
-
+	 
 	/**
 	 * OnPreferenceChangeListener method that will validate a preferencen new
 	 * value when it's changed.
@@ -174,6 +189,18 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 				return true;
 			} catch (Exception e) {
 				Toast.makeText(this, "Couldn't parse '" + newValue.toString() + "' as a number.", Toast.LENGTH_LONG)
+						.show();
+			}
+		}
+		if (CAMERA_ZOOM_KEY.equals(preference.getKey())) {
+			try {
+				int zoom = Integer.parseInt(newValue.toString());
+				CameraView cameraView = TrafficSignDetectorActivity.getmOpenCvCameraView();
+				if(cameraView != null && cameraView.isZoomValueSupported(zoom)) {
+					return true;
+				}
+			} catch (Exception e) {
+				Toast.makeText(this, "Couldn't parse value '" + newValue.toString() + "' as a integer.", Toast.LENGTH_LONG)
 						.show();
 			}
 		}

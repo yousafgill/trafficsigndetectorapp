@@ -1,5 +1,6 @@
 package com.duvallsoftware.trafficsigndetector;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.opencv.android.JavaCameraView;
@@ -19,7 +20,10 @@ public class CameraView extends JavaCameraView {
     }
 
     public List<Size> getResolutionList() {
-        return mCamera.getParameters().getSupportedPreviewSizes();
+    	if(mCamera != null) {
+    		return mCamera.getParameters().getSupportedPreviewSizes();
+    	}
+    	return new ArrayList<Size>();
     }
 
     public void setResolution(Size resolution) {
@@ -31,18 +35,32 @@ public class CameraView extends JavaCameraView {
     }
 
     public Size getResolution() {
-        return mCamera.getParameters().getPreviewSize();
+    	if(mCamera != null) {
+    		mCamera.getParameters().getPreviewSize();
+    	}
+        return null;
     }
     
 	public void setZoom(int zoom) {
+		if (isZoomValueSupported(zoom)) {
+			Camera.Parameters parameters = mCamera.getParameters();
+				parameters.setZoom(zoom);
+				mCamera.setParameters(parameters);
+		}
+	}
+	
+	public boolean isZoomValueSupported(int zoom) {
 		Camera.Parameters parameters = mCamera.getParameters();		
 		if (parameters.isZoomSupported()) {
 			int maxZoom = parameters.getMaxZoom();
-			if (zoom >= 0 && zoom < maxZoom) {
-				parameters.setZoom(zoom);
-				mCamera.setParameters(parameters);
+			if (zoom >= 0 && zoom <= parameters.getMaxZoom()) {
+				return true;
 			}
 		}
-		//super.setZoomValue(zoom);
+		
+		// 0 means no zoom and is always supported
+		if(zoom == 0) return true;
+		
+		return false;
 	}
 }

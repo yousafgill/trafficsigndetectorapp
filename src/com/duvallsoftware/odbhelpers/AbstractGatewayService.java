@@ -23,7 +23,7 @@ import roboguice.service.RoboService;
  * com.github.pires.obd.reader
  */
 public abstract class AbstractGatewayService extends RoboService {
-	private static final String TAG = AbstractGatewayService.class.getName();
+	private static final String TAG = TrafficSignDetectorActivity.TAG;
 	public static final int NOTIFICATION_ID = 1;
 	@Inject
 	protected NotificationManager notificationManager;
@@ -33,22 +33,24 @@ public abstract class AbstractGatewayService extends RoboService {
 	private final IBinder binder = new AbstractGatewayServiceBinder();
 	protected boolean isQueueRunning = false;
 	protected Long queueCounter = 0L;
-	@SuppressWarnings("unchecked")
-	protected BlockingQueue<ObdCommandJob> jobsQueue = new LinkedBlockingQueue();
-	// Run the executeQueue in a different thread to lighten the UI thread
-	Thread t = new Thread(new Runnable() {
-		@Override
-		public void run() {
-			try {
-				executeQueue();
-			} catch (InterruptedException e) {
-				t.interrupt();
-			}
-		}
-	});
+
+	protected BlockingQueue<ObdCommandJob> jobsQueue = new LinkedBlockingQueue<ObdCommandJob>();
+	
+//	// Run the executeQueue in a different thread to lighten the UI thread
+//	Thread t = new Thread(new Runnable() {
+//		@Override
+//		public void run() {
+//			try {
+//				executeQueue();
+//			} catch (InterruptedException e) {
+//				t.interrupt();
+//			}
+//		}
+//	});
 
 	@Override
 	public IBinder onBind(Intent intent) {
+		Log.d(TAG, "onBind called..");
 		return binder;
 	}
 
@@ -56,7 +58,7 @@ public abstract class AbstractGatewayService extends RoboService {
 	public void onCreate() {
 		super.onCreate();
 		Log.d(TAG, "Creating service..");
-		t.start();
+//		t.start();
 		Log.d(TAG, "Service created.");
 	}
 
@@ -65,7 +67,7 @@ public abstract class AbstractGatewayService extends RoboService {
 		super.onDestroy();
 		Log.d(TAG, "Destroying service...");
 		notificationManager.cancel(NOTIFICATION_ID);
-		t.interrupt();
+//		t.interrupt();
 		Log.d(TAG, "Service destroyed.");
 	}
 
@@ -102,11 +104,30 @@ public abstract class AbstractGatewayService extends RoboService {
 			job.setState(ObdCommandJob.ObdCommandJobState.QUEUE_ERROR);
 			Log.e(TAG, "Failed to queue job.");
 		}
+
+		if (!isQueueRunning) {
+			// Run the executeQueue in a different thread to lighten the UI
+			// thread
+			Thread t = new Thread(new Runnable() {
+				@Override
+				public void run() {
+					try {
+						executeQueue();
+					} catch (InterruptedException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+				}
+			});
+
+			t.start();
+		}
 	}
 
 	/**
 	 * Show a notification while this service is running.
 	 */
+	@SuppressWarnings("deprecation")
 	protected void showNotification(String contentTitle, String contentText, int icon, boolean ongoing, boolean notify,
 			boolean vibrate) {
 		final PendingIntent contentIntent = PendingIntent.getActivity(ctx, 0, new Intent(ctx,
@@ -133,8 +154,6 @@ public abstract class AbstractGatewayService extends RoboService {
 	}
 
 	abstract protected void executeQueue() throws InterruptedException;
-
 	abstract public void startService() throws IOException;
-
 	abstract public void stopService();
 }

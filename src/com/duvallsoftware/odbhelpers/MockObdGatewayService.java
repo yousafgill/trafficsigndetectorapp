@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 import com.duvallsoftware.odbhelpers.ObdCommandJob.ObdCommandJobState;
 import com.duvallsoftware.trafficsigndetector.TrafficSignDetectorActivity;
 
+import pt.lighthouselabs.obd.commands.SpeedObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.EchoOffObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.LineFeedOffObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.ObdResetCommand;
@@ -22,7 +23,7 @@ import pt.lighthouselabs.obd.enums.ObdProtocols;
  */
 public class MockObdGatewayService extends AbstractGatewayService {
 
-	private static final String TAG = MockObdGatewayService.class.getName();
+	private static final String TAG = TrafficSignDetectorActivity.TAG;
 
 	public void startService() {
 		Log.d(TAG, "Starting " + this.getClass().getName() + " service..");
@@ -46,7 +47,7 @@ public class MockObdGatewayService extends AbstractGatewayService {
 		queueJob(new ObdCommandJob(new SelectProtocolObdCommand(ObdProtocols.AUTO)));
 
 		// Job for returning dummy data
-		queueJob(new ObdCommandJob(new AmbientAirTemperatureObdCommand()));
+		queueJob(new ObdCommandJob(new SpeedObdCommand()));
 
 		queueCounter = 0L;
 		Log.d(TAG, "Initialization jobs queued.");

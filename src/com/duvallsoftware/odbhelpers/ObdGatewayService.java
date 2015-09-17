@@ -1,22 +1,10 @@
 package com.duvallsoftware.odbhelpers;
 
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothSocket;
-import android.content.SharedPreferences;
-import android.os.Binder;
-import android.os.IBinder;
-import android.util.Log;
-import com.duvallsoftware.odbhelpers.ObdCommandJob.ObdCommandJobState;
-import com.duvallsoftware.trafficsigndetector.TrafficSignDetectorActivity;
-import com.google.inject.Inject;
-
 import java.io.IOException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.UUID;
 
-import pt.lighthouselabs.obd.commands.ObdCommand;
+import pt.lighthouselabs.obd.commands.SpeedObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.EchoOffObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.LineFeedOffObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.ObdResetCommand;
@@ -24,6 +12,19 @@ import pt.lighthouselabs.obd.commands.protocol.SelectProtocolObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.TimeoutObdCommand;
 import pt.lighthouselabs.obd.commands.temperature.AmbientAirTemperatureObdCommand;
 import pt.lighthouselabs.obd.enums.ObdProtocols;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
+import android.content.SharedPreferences;
+import android.os.Binder;
+import android.os.IBinder;
+import android.util.Log;
+import android.widget.Toast;
+
+import com.duvallsoftware.odbhelpers.ObdCommandJob.ObdCommandJobState;
+import com.duvallsoftware.trafficsigndetector.R;
+import com.duvallsoftware.trafficsigndetector.TrafficSignDetectorActivity;
+import com.google.inject.Inject;
 
 /**
  * This class uses some base code from the OBD Reader application from
@@ -31,7 +32,7 @@ import pt.lighthouselabs.obd.enums.ObdProtocols;
  */
 public class ObdGatewayService extends AbstractGatewayService {
 
-	private static final String TAG = ObdGatewayService.class.getName();
+	private static final String TAG = TrafficSignDetectorActivity.TAG;
 	/*
 	 * http://developer.android.com/reference/android/bluetooth/BluetoothDevice.html
 	 * #createRfcommSocketToServiceRecord(java.util.UUID)
@@ -42,7 +43,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 	 * unique UUID."
 	 */
 	private static final UUID MY_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
-	private final IBinder binder = new ObdGatewayServiceBinder();
+//	private final IBinder binder = new ObdGatewayServiceBinder();
 	@Inject
 	SharedPreferences prefs;
 
@@ -58,8 +59,8 @@ public class ObdGatewayService extends AbstractGatewayService {
 		// get the remote Bluetooth device
 		final String remoteDevice = prefs.getString(ConfigActivity.BLUETOOTH_LIST_KEY, null);
 		if (remoteDevice == null || "".equals(remoteDevice)) {
-			// Toast.makeText(ctx, getString(R.string.text_bluetooth_nodevice),
-			// Toast.LENGTH_LONG).show();
+			 Toast.makeText(ctx, getString(R.string.bluetooth_nodevice),
+			 Toast.LENGTH_LONG).show();
 
 			// log error
 			Log.e(TAG, "No Bluetooth device has been selected.");
@@ -68,7 +69,6 @@ public class ObdGatewayService extends AbstractGatewayService {
 			stopService();
 			throw new IOException();
 		} else {
-
 			final BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
 			dev = btAdapter.getRemoteDevice(remoteDevice);
 
@@ -89,10 +89,6 @@ public class ObdGatewayService extends AbstractGatewayService {
 			Log.d(TAG, "Stopping Bluetooth discovery.");
 			btAdapter.cancelDiscovery();
 
-			// showNotification(getString(R.string.notification_action),
-			// getString(R.string.service_starting), R.drawable.ic_btcar, true,
-			// true, false);
-
 			try {
 				startObdConnection();
 			} catch (Exception e) {
@@ -102,18 +98,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 				stopService();
 				throw new IOException();
 			}
-			// showNotification(getString(R.string.notification_action),
-			// getString(R.string.service_started), R.drawable.ic_btcar, true,
-			// true, false);
 		}
-
-		/*
-		 * TODO clean
-		 * 
-		 * Get more preferences
-		 */
-		ArrayList<ObdCommand> cmds = ConfigActivity.getObdCommands(prefs);
-
 	}
 
 	/**
@@ -169,7 +154,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 		queueJob(new ObdCommandJob(new SelectProtocolObdCommand(ObdProtocols.valueOf(protocol))));
 
 		// Job for returning dummy data
-		queueJob(new ObdCommandJob(new AmbientAirTemperatureObdCommand()));
+		queueJob(new ObdCommandJob(new SpeedObdCommand()));
 
 		queueCounter = 0L;
 		Log.d(TAG, "Initialization jobs queued.");
@@ -258,6 +243,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 
 	public class ObdGatewayServiceBinder extends Binder {
 		public ObdGatewayService getService() {
+			Log.d(TAG, "ObdGatewayServiceBinder getService()");
 			return ObdGatewayService.this;
 		}
 	}

@@ -267,6 +267,9 @@ void writeShapeFound(cv::Mat* image) {
 		if( !res ) {
 			LOG("Failed to write image %s to SDCard\n", shapeFileName.str().c_str());
 		}
+		//else {
+		//	  LOG("Successfuly wrote image %s to SDCard\n", shapeFileName.str().c_str());
+		//}
 	}
 	catch (std::exception& ex) {
 		LOG("Exception saving image to SDCard: %s\n", ex.what());
@@ -430,6 +433,36 @@ int runFannDetector(int sign_type, fann_type inputs[]) {
     return result;
 }
 
+/*
+int testShapeFoundWithSecondaryAnns(cv::Mat* frame, cv::Rect rect, int sign_type, int detectedSignal) {
+	cv::Mat b_matrix;
+	
+	// Get the frame image from the captured rectangle
+	getFixedSizeImagefromRectangle(frame, &b_matrix, rect);
+
+	// Reduce to half the size (48x48  ==>  24x24)
+	cv::resize(b_matrix, b_matrix, Size(0, 0), 0.5, 0.5);
+
+	// 24 * 24 = 576
+	int numInputs = (b_matrix.cols * b_matrix.rows)/ 3;
+	fann_type inputs[numInputs];
+	
+	int idx = 0;
+	MatIterator_<Vec3b> it, end;	
+	for (it = b_matrix.begin<Vec3b>(), end = b_matrix.end<Vec3b>(); it != end; ++it, idx++)
+	{
+		// Get the RGB components pixel values
+		uint8_t red = (*it)[0];
+		uint8_t green = (*it)[1];
+		uint8_t blue = (*it)[2];
+
+		inputs[idx] = (float)((red + green + blue) / 3.0f);
+	}
+	
+	return runSingleSignFannDetector(sign_type, detectedSignal, inputs);
+}
+*/
+
 int testShapeFound(cv::Mat* frame, cv::Rect rect, int sign_type)
 {
 	cv::Mat b_matrix;
@@ -464,6 +497,9 @@ int testShapeFound(cv::Mat* frame, cv::Rect rect, int sign_type)
 		inputs[idx + 3 + size] = HH[v];
 	}
 	
+	free(VH);
+	free(HH);
+
 	int detectedSignal = runFannDetector(sign_type, inputs);
 	
 	/*
@@ -682,18 +718,21 @@ void loadANNs() {
     // It's more efficient to load the ANN's just once at the begining
     // and destroy them when onDestroy is called
     
-	if( NULL == warning_ann ) {
-		warning_ann = fann_create_from_file(getANNPath("warning_traffic_signs.net"));
-	}
-	if( NULL == forbidden_ann ) {
-		forbidden_ann = fann_create_from_file(getANNPath("forbidden_traffic_signs.net"));
-	}
-	if( NULL == obligatory_ann ) {
-		obligatory_ann = fann_create_from_file(getANNPath("obligatory_traffic_signs.net"));
-	}
-	if( NULL == information_ann ) {
-		information_ann = fann_create_from_file(getANNPath("information_traffic_signs.net"));
-	}
+	char * filePath = getANNPath("warning_traffic_signs.net");
+	warning_ann = fann_create_from_file(filePath);
+	free(filePath);
+
+	filePath = getANNPath("forbidden_traffic_signs.net");
+	forbidden_ann = fann_create_from_file(filePath);
+	free(filePath);
+	
+	filePath = getANNPath("obligatory_traffic_signs.net");
+	obligatory_ann = fann_create_from_file(filePath);
+	free(filePath);
+	
+	filePath = getANNPath("information_traffic_signs.net");
+	information_ann = fann_create_from_file(filePath);
+	free(filePath);
 	
 	// Load the Artificial Neural Network specific for each sign
 	// These ANN's will be used to confirm the sign detected in the first step with the "sign type" ANN's
@@ -704,8 +743,10 @@ void loadANNs() {
 		try {
 			strcpy(ann_name, prefix);
 			strcat(ann_name, suffix);
-			 
-			single_warning_ann[i] = fann_create_from_file(getANNPath(ann_name));
+			
+			char * filePath = getANNPath(ann_name);
+			single_warning_ann[i] = fann_create_from_file(filePath);
+			free(filePath);
 		} catch(std::exception& ex) {
 			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
 			single_warning_ann[i] = NULL;
@@ -718,8 +759,10 @@ void loadANNs() {
 		try {
 			strcpy(ann_name, prefix);
 			strcat(ann_name, suffix);
-			 
-			single_forbidden_ann[i] = fann_create_from_file(getANNPath(ann_name));
+			
+			char * filePath = getANNPath(ann_name);
+			single_forbidden_ann[i] = fann_create_from_file(filePath);
+			free(filePath);
 		} catch(std::exception& ex) {
 			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
 			single_forbidden_ann[i] = NULL;
@@ -732,8 +775,10 @@ void loadANNs() {
 		try {
 			strcpy(ann_name, prefix);
 			strcat(ann_name, suffix);
-			 
-			single_obligatory_ann[i] = fann_create_from_file(getANNPath(ann_name));
+			
+			char * filePath = getANNPath(ann_name);
+			single_obligatory_ann[i] = fann_create_from_file(filePath);
+			free(filePath);
 		} catch(std::exception& ex) {
 			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
 			single_obligatory_ann[i] = NULL;
@@ -746,8 +791,10 @@ void loadANNs() {
 		try {
 			strcpy(ann_name, prefix);
 			strcat(ann_name, suffix);
-			 
-			single_information_ann[i] = fann_create_from_file(getANNPath(ann_name));
+			
+			char * filePath = getANNPath(ann_name);
+			single_information_ann[i] = fann_create_from_file(filePath);
+			free(filePath);
 		} catch(std::exception& ex) {
 			LOG("Exception initializing %s ANN from file: %s\n", ann_name, ex.what());
 			single_information_ann[i] = NULL;
@@ -766,12 +813,12 @@ extern "C" {
 	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_initTrafficSignsDetector
 		(JNIEnv* env, jobject, jstring dataPath) {
 
-		LOG("Initializing Traffic Sign Detector");
+		LOG("Initializing Traffic Sign Detector ...");
 		
 		// Set Data Path
 		assetsDataPath = (char*)env->GetStringUTFChars(dataPath, NULL);
 				
-		initializeANNs();
+		initializeANNs();		
 		
 		// Load ANN networks from files
 		loadANNs();
@@ -792,6 +839,7 @@ extern "C" {
 			saveFilesPath = env->GetStringUTFChars(extStoragePath,NULL);
 		}
 		
+		LOG("Initializing Traffic Sign Detector Done");
 		return 0;
 	};
 
@@ -947,44 +995,39 @@ extern "C" {
 	
 	JNIEXPORT jint JNICALL Java_com_duvallsoftware_trafficsigndetector_TrafficSignDetectorActivity_destroyANNs
 		(JNIEnv* env, jobject) {
-		if( NULL != warning_ann ) {
+		try {
+			free(assetsDataPath);
+
+			// XXX: Not calling the fann_destroy because there is some problem
+			// with it - causes an exception when fre'ing ann->first_layer NULL pointer			
 			fann_destroy(warning_ann);
-		}
-		if( NULL != forbidden_ann ) {
 			fann_destroy(forbidden_ann);
-		}
-		if( NULL != obligatory_ann ) {
 			fann_destroy(obligatory_ann);
-		}
-		if( NULL != information_ann ) {
 			fann_destroy(information_ann);
-		}
-		
-		for(int i=0;i<NUMBER_WARNING_SIGNS;i++) {
-			if( NULL != single_warning_ann[i] ) {
+			
+			for(int i=0;i<NUMBER_WARNING_SIGNS;i++) {
 				fann_destroy(single_warning_ann[i]);
 			}
-		}
 
-		for(int i=0;i<NUMBER_FORBIDDEN_SIGNS;i++) {
-			if( NULL != single_forbidden_ann[i] ) {
+			for(int i=0;i<NUMBER_FORBIDDEN_SIGNS;i++) {
 				fann_destroy(single_forbidden_ann[i]);
 			}
-		}
 
-		for(int i=0;i<NUMBER_OBLIGATORY_SIGNS;i++) {
-			if( NULL != single_obligatory_ann[i] ) {
+			for(int i=0;i<NUMBER_OBLIGATORY_SIGNS;i++) {
 				fann_destroy(single_obligatory_ann[i]);
 			}
-		}
 
-		for(int i=0;i<NUMBER_INFORMATION_SIGNS;i++) {
-			if( NULL != single_information_ann[i] ) {
+			for(int i=0;i<NUMBER_INFORMATION_SIGNS;i++) {
 				fann_destroy(single_information_ann[i]);
 			}
+			
+
+			LOG("Destroyed ANNs");
+		} catch(std::exception& ex) {
+			LOG("Exception destroying ANN's: %s\n", ex.what());
+			return -1;
 		}
-		
-		LOG("Destroyed ANNs");
+
 		return 0;
 	};
 }

@@ -17,4 +17,6 @@
     <string name="hide_fps">Hide FPS</string>
     <string name="resolution">Resolution...</string>    
     <string name="bluetooth_disabled">Bluetooth is disable. Please enable bluetooth if you want to read speed information.</string>
+    <string name="updatePreferences">Edit Preferences</string>
+    <string name="bluetooth_nodevice">No Bluetooth Device connected</string>
 </resources>
