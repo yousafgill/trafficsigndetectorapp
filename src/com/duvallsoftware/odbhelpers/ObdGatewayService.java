@@ -12,6 +12,7 @@ import pt.lighthouselabs.obd.commands.protocol.SelectProtocolObdCommand;
 import pt.lighthouselabs.obd.commands.protocol.TimeoutObdCommand;
 import pt.lighthouselabs.obd.commands.temperature.AmbientAirTemperatureObdCommand;
 import pt.lighthouselabs.obd.enums.ObdProtocols;
+import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
@@ -53,6 +54,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 
 	public static final String BLUETOOTH_LIST_KEY = "bluetooth_list_preference";
 
+	@SuppressLint("NewApi")
 	public void startService() throws IOException {
 		Log.d(TAG, "Starting service..");
 
@@ -71,7 +73,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 		} else {
 			final BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
 			dev = btAdapter.getRemoteDevice(remoteDevice);
-
+			
 			/*
 			 * Establish Bluetooth connection
 			 * 
@@ -153,7 +155,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 		String protocol = prefs.getString(ConfigActivity.PROTOCOLS_LIST_KEY, "AUTO");
 		queueJob(new ObdCommandJob(new SelectProtocolObdCommand(ObdProtocols.valueOf(protocol))));
 
-		// Job for returning dummy data
+		// Job for returning speed data
 		queueJob(new ObdCommandJob(new SpeedObdCommand()));
 
 		queueCounter = 0L;
@@ -201,6 +203,7 @@ public class ObdGatewayService extends AbstractGatewayService {
 			} catch (Exception e) {
 				job.setState(ObdCommandJobState.EXECUTION_ERROR);
 				Log.e(TAG, "Failed to run command. -> " + e.getMessage());
+				Log.e(TAG, "Exception -> " + e);
 			}
 
 			if (job != null) {

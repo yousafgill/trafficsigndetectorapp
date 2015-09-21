@@ -7,8 +7,8 @@
             android:defaultValue="true"
             android:dialogTitle="Enable Bluetooth"
             android:key="enable_bluetooth_preference"
-            android:summaryOff="Turn on Bluetooth"
-            android:summaryOn="Turn off Bluetooth"
+            android:summaryOff="Bluetooth is disabled."
+            android:summaryOn="Bluetooth is enabled."
             android:title="Enable Bluetooth" />
         <ListPreference
             android:dialogTitle="Bluetooth Devices"
@@ -20,11 +20,11 @@
         android:title="Camera preferences">
         <CheckBoxPreference
             android:defaultValue="false"
-            android:dialogTitle="Show FPS"
+            android:dialogTitle="Display FPS"
             android:key="show_fps_preference"
             android:summaryOff="Frames per second are not visible"
             android:summaryOn="Frames per second are visible"
-            android:title="Show FPS" />
+            android:title="Display FPS" />
         <EditTextPreference
             android:positiveButtonText="Ok"
             android:negativeButtonText="Cancel" 
@@ -46,7 +46,47 @@
             android:title="Save Captured Images" />
     </PreferenceCategory>
     <PreferenceCategory
+        android:title="Display Preferences">
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dialogTitle="Display Speed"
+            android:key="show_speed_preference"
+            android:summaryOff="Instant Speed (OBD) is not visible"
+            android:summaryOn="Instant Speed (OBD) is visible"
+            android:title="Display Speed" />
+        <EditTextPreference
+            android:defaultValue="5"
+            android:dialogTitle="Detected Signs Display Period"
+            android:key="signs_display_period_preference"
+            android:summary="The duration in seconds (1 to 60 sec) that detected signs should be displayed. A maximum of three signs may be displayed so when a new sign is detected the older one is removed from display."
+            android:title="Detected Signs Display Period" />
+    </PreferenceCategory>
+    <PreferenceCategory
+        android:title="Sound Preferences">
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dialogTitle="Detected Signs Voice Warnings"
+            android:key="enable_signs_voice_preference"
+            android:summaryOff="Detected signs voice warnings are disabled"
+            android:summaryOn="Detected signs voice warnings are enabled"
+            android:title="Detected Signs Voice Warnings" />
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dialogTitle="Speed Voice Warnings"
+            android:key="enable_speed_warning_voice_preference"
+            android:summaryOff="Speed voice warnings are disabled"
+            android:summaryOn="Speed voice warnings are enabled"
+            android:title="Speed Voice Warnings" />
+    </PreferenceCategory>
+    <PreferenceCategory
         android:title="OBD Preferences">
+        <CheckBoxPreference
+            android:defaultValue="true"
+            android:dialogTitle="Enable OBD Querying"
+            android:key="enable_obd_preference"
+            android:summaryOff="Turn on OBD queries"
+            android:summaryOn="Turn off OBD queries"
+            android:title="Enable OBD Querying" />        
         <ListPreference
             android:defaultValue="AUTO"
             android:dialogTitle="OBD Protocol"
@@ -64,7 +104,17 @@
             android:defaultValue="4"
             android:dialogTitle="Update Period in Seconds"
             android:key="obd_update_period_preference"
-            android:summary="The length of time between querying vehicle data in seconds"
+            android:summary="The length of time between querying vehicle data in seconds (1 to 60 sec)"
             android:title="Update Period in Seconds" />
+    </PreferenceCategory>
+    <PreferenceCategory
+        android:title="Debug Preferences">
+        <CheckBoxPreference
+            android:defaultValue="false"
+            android:dialogTitle="Show Pre-processing Options"
+            android:key="enable_preprocessing_options_preference"
+            android:summaryOff="Pre-processing options are disabled"
+            android:summaryOn="Pre-processing options are enabled"
+            android:title="Show Pre-processing Options" />
     </PreferenceCategory>
 </PreferenceScreen>

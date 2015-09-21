@@ -29,6 +29,7 @@
         android:label="@string/app_name"
         android:icon="@drawable/icon"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+        android:hardwareAccelerated="true"
         android:allowBackup="false" >
 
         <activity android:name="com.duvallsoftware.trafficsigndetector.SplashScreenActivity"
@@ -54,9 +55,6 @@
 	
 	    <service
             android:name="com.duvallsoftware.odbhelpers.ObdGatewayService"
-            android:exported="false" />
-    	<service
-            android:name="com.duvallsoftware.odbhelpers.MockObdGatewayService"
             android:exported="false" />
     </application>
 </manifest>

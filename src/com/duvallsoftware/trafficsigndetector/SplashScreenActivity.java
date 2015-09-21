@@ -2,28 +2,24 @@ package com.duvallsoftware.trafficsigndetector;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.Locale;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
 
-import com.duvallsoftware.settings.TSRConfiguration;
-
-import android.media.AudioManager;
+import android.app.Activity;
+import android.content.Intent;
+import android.content.res.AssetManager;
 import android.media.MediaScannerConnection;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
-import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.WindowManager;
-import android.app.Activity;
-import android.content.Intent;
-import android.content.res.AssetManager;
+
+import com.duvallsoftware.settings.TSRConfiguration;
  
 public class SplashScreenActivity extends Activity {	
 	
@@ -189,28 +185,4 @@ public class SplashScreenActivity extends Activity {
 			}
 		}
 	}
-    
-    private void initializeOCR() {
-		String str = getApplicationInfo().dataDir;
-		File localFile = new File(str, "tessdata");
-		if (!localFile.isDirectory()) {
-			localFile.mkdir();
-		}
-		try {
-			InputStream is = getAssets().open("eng.traineddata");
-			FileOutputStream os = new FileOutputStream(str + "/tessdata/eng.traineddata");
-			byte[] arrayOfByte = new byte[1024];
-			for (;;) {
-				int i = is.read(arrayOfByte);
-				if (i <= 0) {
-					is.close();
-					os.close();
-					return;
-				}
-				os.write(arrayOfByte, 0, i);
-			}
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}	
 }

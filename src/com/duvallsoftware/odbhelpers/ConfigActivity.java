@@ -37,15 +37,32 @@ import com.duvallsoftware.trafficsigndetector.TrafficSignDetectorActivity;
  */
 public class ConfigActivity extends PreferenceActivity implements OnPreferenceChangeListener {
 
+	// Bluetooth
 	public static final String BLUETOOTH_LIST_KEY = "bluetooth_list_preference";
+	public static final String ENABLE_BT_KEY = "enable_bluetooth_preference";
+	
+	// OBD
+	public static final String OBD_ENABLED_KEY = "enable_obd_preference";
 	public static final String OBD_UPDATE_PERIOD_KEY = "obd_update_period_preference";
 	public static final String PROTOCOLS_LIST_KEY = "obd_protocols_preference";
-	public static final String ENABLE_BT_KEY = "enable_bluetooth_preference";
 	public static final String IMPERIAL_UNITS_KEY = "imperial_units_preference";
+	
+	// Camera
 	public static final String CAMERA_RESOLUTION_LIST_KEY = "camera_resolution_list_preference";
 	public static final String CAMERA_ZOOM_KEY = "camera_zoom_preference";
 	public static final String SAVE_IMAGES_KEY = "save_captured_images_preference";
+	
+	// Display
 	public static final String SHOW_FPS_KEY = "show_fps_preference";
+	public static final String SHOW_SPEED_KEY = "show_speed_preference";		
+	public static final String SIGNS_DISPLAY_PERIOD_KEY = "signs_display_period_preference";
+	
+	// Sound
+	public static final String ENABLE_SIGNS_VOICE_KEY = "enable_signs_voice_preference";
+	public static final String ENABLE_SPEED_WARNING_VOICE_KEY = "enable_speed_warning_voice_preference";
+	
+	// Other	
+	public static final String ENABLE_PREPROCESSING_OPTIONS_KEY = "enable_preprocessing_options_preference";
 	
 	/**
 	 * @param prefs
@@ -185,10 +202,14 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 	public boolean onPreferenceChange(Preference preference, Object newValue) {
 		if (OBD_UPDATE_PERIOD_KEY.equals(preference.getKey())) {
 			try {
-				Double.parseDouble(newValue.toString());
+				int value = Integer.parseInt(newValue.toString());
+				if( value < 0 || value > 60) {
+					Toast.makeText(this, "Please enter a value between 0 and 60.", Toast.LENGTH_LONG).show();
+					return false;
+				}
 				return true;
 			} catch (Exception e) {
-				Toast.makeText(this, "Couldn't parse '" + newValue.toString() + "' as a number.", Toast.LENGTH_LONG)
+				Toast.makeText(this, "Couldn't parse '" + newValue.toString() + "' as a integer.", Toast.LENGTH_LONG)
 						.show();
 			}
 		}
@@ -201,6 +222,19 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 				}
 			} catch (Exception e) {
 				Toast.makeText(this, "Couldn't parse value '" + newValue.toString() + "' as a integer.", Toast.LENGTH_LONG)
+						.show();
+			}
+		}
+		if (SIGNS_DISPLAY_PERIOD_KEY.equals(preference.getKey())) {
+			try {
+				int value = Integer.parseInt(newValue.toString());
+				if( value < 0 || value > 60) {
+					Toast.makeText(this, "Please enter a value between 0 and 60.", Toast.LENGTH_LONG).show();
+					return false;
+				}
+				return true;
+			} catch (Exception e) {
+				Toast.makeText(this, "Couldn't parse '" + newValue.toString() + "' as a integer.", Toast.LENGTH_LONG)
 						.show();
 			}
 		}
