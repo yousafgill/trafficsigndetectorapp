@@ -26,6 +26,8 @@ public class SplashScreenActivity extends Activity {
 	static AssetManager assetManager;
 	private String assetsDataPath = null;
 	
+	public static final boolean OCREnabled = false;
+	
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -54,8 +56,10 @@ public class SplashScreenActivity extends Activity {
 	
 					// Load native library after(!) OpenCV initialization
 					System.loadLibrary("gnustl_shared");
-//					System.loadLibrary("lept");
-//					System.loadLibrary("tess");					
+					if(OCREnabled) {
+						System.loadLibrary("lept");
+						System.loadLibrary("tess");
+					}
 					System.loadLibrary("sign_detector");
 				}
 				break;
@@ -86,7 +90,10 @@ public class SplashScreenActivity extends Activity {
 		assetManager = getApplicationContext().getAssets();
 		assetsDataPath = getApplicationContext().getFilesDir().getPath();
 		
-		copyANNFilesToAssetPath();		
+		copyANNFilesToAssetPath();
+		if(OCREnabled) {
+			copyTesseractTestFileToAssetPath();
+		}
     }
     
     private void copyANNFilesToAssetPath() {
@@ -161,6 +168,13 @@ public class SplashScreenActivity extends Activity {
 			}
 		}
 	}
+    
+    private void copyTesseractTestFileToAssetPath() {
+		// Copy ANN files to asset path available from JNI context
+		String tesseractSrcFile = "eng.traineddata";
+		String tesseractDstFile = assetsDataPath + File.separator + "tessdata" + File.separator + tesseractSrcFile;
+		copyAsset(tesseractSrcFile, tesseractDstFile);
+    }
     
     private void copyAsset(String srcAsset, String dst) {
 		File f = new File(dst);

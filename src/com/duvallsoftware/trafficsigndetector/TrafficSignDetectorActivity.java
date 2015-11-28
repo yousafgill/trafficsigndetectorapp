@@ -52,6 +52,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.duvallsoftware.odbhelpers.AbstractGatewayService;
@@ -71,7 +72,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	private boolean isTTSInitialized = false;
 	
 	private static native String[] detectTrafficSigns(long matAddrRgba, int viewMode, boolean saveShapes, boolean showFPS);
-	private static native void initTrafficSignsDetector(String assetsDataPath);
+	private static native void initTrafficSignsDetector(String assetsDataPath, boolean ocrEnabled);
 	private static native void destroyANNs();
 	
 	public static final String TAG = "TrafficSignsDetector::Activity";
@@ -126,9 +127,11 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	private boolean isServiceBound = false;
 	private AbstractGatewayService service;
 	private Integer currentSpeed = 0;
-	private String currentSpeedStr = "0";
+	private String currentSpeedStr = null;
 	private String currentRawSpeedStr = "";
 
+	private TextView mSpeedTextView = null;
+	
 	// Camera related stuff
 	private static CameraView mOpenCvCameraView = null;
 	public static CameraView getmOpenCvCameraView() {
@@ -160,24 +163,56 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
 		mOpenCvCameraView.setCvCameraViewListener(this);		
 		
+		mOpenCvCameraView.setOptimizedParameters();
+		
 		mViewMode = VIEW_DETECT_SHAPES;
 		
 		prefs = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
 
+		mSpeedTextView = (TextView) findViewById(R.id.speedTextView);
+		
 		// Get initial Bluetooth state - will restore this state when App finishes
 		final BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
 		if (btAdapter != null)
 			bluetoothDefaultIsEnable = btAdapter.isEnabled();
 		
 		// Initialize the TSR engine
-		initTrafficSignsDetector(getApplicationContext().getFilesDir().getPath());
+		initTrafficSignsDetector(getApplicationContext().getFilesDir().getPath(), SplashScreenActivity.OCREnabled);
 		
 		// Initialize the TTS engine
 		if(!isTTSInitialized){
 			initializeTTS();
 		}
-	}	
+	}
 	
+	private void initializeTTS() {
+		tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+			@SuppressWarnings("deprecation")
+			public void onInit(int paramAnonymousInt) {
+				if (paramAnonymousInt == 0) {
+					isTTSInitialized = true;
+					if (tts.isLanguageAvailable(Locale.US) >= 0) {
+						tts.setLanguage(Locale.US);
+					}
+
+					new Thread(new Runnable() {
+			            @Override
+			            public void run() {
+			            	((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
+							tts.speak("Traffic Sign Recognition application started", 1, null);
+			            }
+			        }).start();
+					
+					return;
+				}
+				isTTSInitialized = false;
+			}
+		});
+	}
+	
+	
+	
+	// Region - Preferences region
 	public void callPreferences(View view) {
 		updateConfig();
 	}
@@ -202,6 +237,140 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		}
 	}
 	
+	private void setDefaultResolution() {
+		Camera.Size resolution = mResolutionList.get(mResolutionList.size() - 1);
+
+		for (int i = 0; i < mResolutionList.size(); i++) {
+			// Resolution preferences: 480x360; 640x480; 3..x2..
+			if (mResolutionList.get(i).width == 480) {
+				resolution = mResolutionList.get(i);
+				break;
+			} else if (mResolutionList.get(i).width == 640) {
+				resolution = mResolutionList.get(i);
+				break;
+			} else if (mResolutionList.get(i).width > 300 && mResolutionList.get(i).width < 400) {
+				resolution = mResolutionList.get(i);
+				break;
+			}
+		}
+
+		mOpenCvCameraView.setResolution(resolution);
+		resolution = mOpenCvCameraView.getResolution();
+		if( resolution != null){
+			String caption = Integer.valueOf(resolution.width).toString() + "x"
+					+ Integer.valueOf(resolution.height).toString();
+			Toast.makeText(this, caption, Toast.LENGTH_LONG).show();
+		}
+	}
+
+	private void applyPreferences() {
+		// Bluetooth
+		if (prefs.contains(ConfigActivity.ENABLE_BT_KEY)) {
+			bluetoothPrefEnabled = prefs.getBoolean(ConfigActivity.ENABLE_BT_KEY, true);
+		}
+		
+		// Display
+		if (prefs.contains(ConfigActivity.SHOW_FPS_KEY)) {
+			showFPS = prefs.getBoolean(ConfigActivity.SHOW_FPS_KEY, true);
+		}
+		if (prefs.contains(ConfigActivity.SHOW_SPEED_KEY)) {
+			showSpeed = prefs.getBoolean(ConfigActivity.SHOW_SPEED_KEY, true);
+		}
+		if (prefs.contains(ConfigActivity.SIGNS_DISPLAY_PERIOD_KEY)) {
+			String displaySignDurationDefaultValue = "5";
+			String display_sign_duration_str = prefs.getString(ConfigActivity.SIGNS_DISPLAY_PERIOD_KEY, displaySignDurationDefaultValue); // seconds
+			try {
+				display_sign_duration = Integer.parseInt(display_sign_duration_str);
+			} catch(NumberFormatException e) { 
+				display_sign_duration = 5; // default value
+			}
+		}
+		
+		// OBD
+		if (prefs.contains(ConfigActivity.OBD_ENABLED_KEY)) {
+			obdEnabled = prefs.getBoolean(ConfigActivity.OBD_ENABLED_KEY, true);
+		}
+
+		// Sound
+		if (prefs.contains(ConfigActivity.ENABLE_SIGNS_VOICE_KEY)) {
+			signsWarningVoiceEnabled = prefs.getBoolean(ConfigActivity.ENABLE_SIGNS_VOICE_KEY, true);
+		}
+		if (prefs.contains(ConfigActivity.ENABLE_SPEED_WARNING_VOICE_KEY)) {
+			speedWarningVoiceEnabled = prefs.getBoolean(ConfigActivity.ENABLE_SPEED_WARNING_VOICE_KEY, true);
+		}
+		
+		ImageButton btn = (ImageButton) findViewById(R.id.muteButton);
+		if(btn != null) {
+			if(signsWarningVoiceEnabled || speedWarningVoiceEnabled) {			
+				btn.setVisibility(ImageView.VISIBLE);
+			} else {
+				btn.setVisibility(ImageView.INVISIBLE);
+			}
+		}
+		
+		// Camera - NOTE: Resolution and zoom are only applied after camera initialized
+		if (prefs.contains(ConfigActivity.SAVE_IMAGES_KEY)) {
+			saveShapes = prefs.getBoolean(ConfigActivity.SAVE_IMAGES_KEY, false);
+		}
+		
+		// Other
+		
+		if (prefs.contains(ConfigActivity.ENABLE_PREPROCESSING_OPTIONS_KEY)) {
+			enablepreProcessingMenuOptions = prefs.getBoolean(ConfigActivity.ENABLE_PREPROCESSING_OPTIONS_KEY, false);
+		}
+	}
+	
+	private void applyCameraPreferences() {
+		if(mOpenCvCameraView == null) return;		
+		
+		mResolutionList = mOpenCvCameraView.getResolutionList();
+		if (mResolutionList != null && mResolutionList.size() > 0) {
+			if(!prefs.contains(ConfigActivity.CAMERA_RESOLUTION_LIST_KEY)) {
+				setDefaultResolution();
+			} else {
+				try {
+					String resolutionWidthPref = prefs.getString(ConfigActivity.CAMERA_RESOLUTION_LIST_KEY, "372");
+					int resolutionWidth = Integer.valueOf(resolutionWidthPref).intValue();
+	
+					Camera.Size resolution = null;
+					for (Camera.Size resSize : mResolutionList) {
+						if (resSize.width == resolutionWidth) {
+							resolution = resSize;
+							break;
+						}
+					}
+					if (resolution != null) {
+						// No need for validation because entries are retrieve from
+						// camera supported resolutions
+						mOpenCvCameraView.setResolution(resolution);
+	
+						String caption = Integer.valueOf(resolution.width).toString() + "x"
+								+ Integer.valueOf(resolution.height).toString();
+						Toast.makeText(this, caption, Toast.LENGTH_LONG).show();
+					} else {
+						setDefaultResolution();
+					}
+				} catch(NumberFormatException e) {
+					Log.e(TAG, e.getMessage());
+					setDefaultResolution();
+				}
+			}
+		}
+		
+		
+		if (prefs.contains(ConfigActivity.CAMERA_ZOOM_KEY)) {
+			String zoomStr = prefs.getString(ConfigActivity.CAMERA_ZOOM_KEY, "0");
+			try{
+				mZoom = Integer.parseInt(zoomStr);			
+				mOpenCvCameraView.setZoom(mZoom);
+			} catch(NumberFormatException e) {
+				Log.e(TAG, e.getMessage());
+			}
+		}
+	}
+	// EndRegion
+	
+	// Region - Lifecycle methods
 	@Override
 	public void onResume() {
 		super.onResume();
@@ -290,6 +459,27 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	}
 	
 	@Override
+	public boolean onOptionsItemSelected(MenuItem item) {
+		if (item == mItemHLSConversion) {
+			mViewMode = VIEW_HLS_CONVERSION;
+		} else if (item == mItemColorExtraction) {
+			mViewMode = VIEW_COLOR_EXTRACTION;
+		} else if (item == mItemCannyConversion) {
+			mViewMode = VIEW_CANNY_CONVERSION;
+		} else if (item == mItemErosionDilation) {
+			mViewMode = VIEW_EROSION_DILATION;
+		} else if (item == mItemDetectShapes) {
+			mViewMode = VIEW_DETECT_SHAPES;
+		} else if (item == mItemSignsRecognize) {
+			mViewMode = VIEW_SIGNS_RECOGNIZE;
+		}else if(item == mUpdatePreferences) {
+	        updateConfig();
+		}
+
+		return true;
+	}
+	
+	@Override
 	public void onCameraViewStarted(int width, int height) {
 		if(mOpenCvCameraView == null) {
 			Log.e(TAG, "mOpenCvCameraView is NULL");
@@ -315,19 +505,27 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
 		mRgba = inputFrame.rgba();
 
-		expireDetectedSigns();
-
-		String detected_signs[] = detectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode, saveShapes,
-				showFPS);
-		// Add new signs to hasmap
-		if (detected_signs != null) {
-			for (int i = 0; i < detected_signs.length; i++) {
-				DetectedSign detected_sign = new DetectedSign(detected_signs[i], System.currentTimeMillis());
-				detectedSigns.put(detected_sign.getSignId(), detected_sign);
-//				Log.i(TAG, "Found new Sign: " + detected_sign.getSignId());
+		return processSignsDetection(mRgba);
+	}
+	// EndRegion
+	
+	
+	// Region - Signs Detection methods
+	/*
+	 * Remove signs which are being displayed for more than defined timeframe
+	 * Speed signs are displayed the double time long than other signs
+	 */
+	private void expireDetectedSigns() {
+		long currentMillis = System.currentTimeMillis();
+		for (Iterator<Map.Entry<String, DetectedSign>> it = detectedSigns.entrySet().iterator(); it.hasNext();) {
+			Map.Entry<String, DetectedSign> entry = it.next();
+			if (currentMillis - ((DetectedSign) entry.getValue()).getDetectedTimestamp() > (display_sign_duration * 1000)) {
+				it.remove();
 			}
 		}
-
+	}
+	
+	private void drawDetectedSigns(Mat mRgba) {
 		// Images are 111 x 111 pixels
 		final int padding = 20;
 		final int imgWidth = 111;
@@ -356,165 +554,90 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				}
 			}
 		}
-
+	}
+	
+	private void updateCurrentSpeedDisplay() {
 		// Set Current Speed		
-		if(showSpeed && obdEnabled) {
-			currentSpeedStr = "220 km/h";
-			Imgproc.putText(mRgba, currentSpeedStr, new Point(180, 430), Core.FONT_HERSHEY_DUPLEX, 2, new Scalar(255, 0, 0, 255), 5);
+		if(mSpeedTextView.getVisibility() == View.VISIBLE){			
+			runOnUiThread(new Runnable() {
+				@Override
+				public void run() {
+					// Set Current Speed					
+					mSpeedTextView.setText(currentSpeedStr);
+				}
+			});
 //			Imgproc.putText(mRgba, "RAW SPEED: " + currentRawSpeedStr, new Point(180, 450), Core.FONT_HERSHEY_DUPLEX, 4, new Scalar(255, 0, 0, 255), 2);
 		}
-		return mRgba;
-	}
-
-	@Override
-	public boolean onOptionsItemSelected(MenuItem item) {
-		if (item == mItemHLSConversion) {
-			mViewMode = VIEW_HLS_CONVERSION;
-		} else if (item == mItemColorExtraction) {
-			mViewMode = VIEW_COLOR_EXTRACTION;
-		} else if (item == mItemCannyConversion) {
-			mViewMode = VIEW_CANNY_CONVERSION;
-		} else if (item == mItemErosionDilation) {
-			mViewMode = VIEW_EROSION_DILATION;
-		} else if (item == mItemDetectShapes) {
-			mViewMode = VIEW_DETECT_SHAPES;
-		} else if (item == mItemSignsRecognize) {
-			mViewMode = VIEW_SIGNS_RECOGNIZE;
-		}else if(item == mUpdatePreferences) {
-	        updateConfig();
-		}
-
-		return true;
 	}
 	
-	private void setDefaultResolution() {
-		Camera.Size resolution = mResolutionList.get(mResolutionList.size() - 1);
+	/*
+	 * Call JNI sign detector and process detected signs, if any
+	 */
+	private Mat processSignsDetection(Mat mRgba) {
+		// Remove signs which are being displayed for more than defined timeframe
+		expireDetectedSigns();
 
-		for (int i = 0; i < mResolutionList.size(); i++) {
-			// Resolution preferences: 480x360; 640x480; 3..x2..
-			if (mResolutionList.get(i).width == 480) {
-				resolution = mResolutionList.get(i);
-				break;
-			} else if (mResolutionList.get(i).width == 640) {
-				resolution = mResolutionList.get(i);
-				break;
-			} else if (mResolutionList.get(i).width > 300 && mResolutionList.get(i).width < 400) {
-				resolution = mResolutionList.get(i);
-				break;
-			}
-		}
-
-		mOpenCvCameraView.setResolution(resolution);
-		resolution = mOpenCvCameraView.getResolution();
-		if( resolution != null){
-			String caption = Integer.valueOf(resolution.width).toString() + "x"
-					+ Integer.valueOf(resolution.height).toString();
-			Toast.makeText(this, caption, Toast.LENGTH_LONG).show();
-		}
-	}
-
-	private void applyPreferences() {
-		// Bluetooth
-		if (prefs.contains(ConfigActivity.ENABLE_BT_KEY)) {
-			bluetoothPrefEnabled = prefs.getBoolean(ConfigActivity.ENABLE_BT_KEY, true);
-		}
-		
-		// Display
-		if (prefs.contains(ConfigActivity.SHOW_FPS_KEY)) {
-			showFPS = prefs.getBoolean(ConfigActivity.SHOW_FPS_KEY, true);
-		}
-		if (prefs.contains(ConfigActivity.SHOW_SPEED_KEY)) {
-			showSpeed = prefs.getBoolean(ConfigActivity.SHOW_SPEED_KEY, true);
-		}
-		if (prefs.contains(ConfigActivity.SIGNS_DISPLAY_PERIOD_KEY)) {
-			String displaySignDurationDefaultValue = "5";
-			String display_sign_duration_str = prefs.getString(ConfigActivity.SIGNS_DISPLAY_PERIOD_KEY, displaySignDurationDefaultValue); // seconds
-			try {
-				display_sign_duration = Integer.parseInt(display_sign_duration_str);
-			} catch(NumberFormatException e) { 
-				display_sign_duration = 5; // default value
-			}
-		}
-		
-		// OBD
-		if (prefs.contains(ConfigActivity.OBD_ENABLED_KEY)) {
-			obdEnabled = prefs.getBoolean(ConfigActivity.OBD_ENABLED_KEY, true);
-		}
-
-		// Sound
-		if (prefs.contains(ConfigActivity.ENABLE_SIGNS_VOICE_KEY)) {
-			signsWarningVoiceEnabled = prefs.getBoolean(ConfigActivity.ENABLE_SIGNS_VOICE_KEY, true);
-		}
-		if (prefs.contains(ConfigActivity.ENABLE_SPEED_WARNING_VOICE_KEY)) {
-			speedWarningVoiceEnabled = prefs.getBoolean(ConfigActivity.ENABLE_SPEED_WARNING_VOICE_KEY, true);
-		}
-		
-		ImageButton btn = (ImageButton) findViewById(R.id.muteButton);
-		if(btn != null) {
-			if(signsWarningVoiceEnabled || speedWarningVoiceEnabled) {			
-				btn.setVisibility(ImageView.VISIBLE);
-			} else {
-				btn.setVisibility(ImageView.INVISIBLE);
-			}
-		}
-		
-		// Camera - NOTE: Resolution and zoom are only applied after camera initialized
-		if (prefs.contains(ConfigActivity.SAVE_IMAGES_KEY)) {
-			saveShapes = prefs.getBoolean(ConfigActivity.SAVE_IMAGES_KEY, false);
-		}
-		
-		// Other
-		
-		if (prefs.contains(ConfigActivity.ENABLE_PREPROCESSING_OPTIONS_KEY)) {
-			enablepreProcessingMenuOptions = prefs.getBoolean(ConfigActivity.ENABLE_PREPROCESSING_OPTIONS_KEY, false);
-		}
-	}
-	
-	private void applyCameraPreferences() {
-		mResolutionList = mOpenCvCameraView.getResolutionList();
-		if (mResolutionList != null && mResolutionList.size() > 0) {
-			if(!prefs.contains(ConfigActivity.CAMERA_RESOLUTION_LIST_KEY)) {
-				setDefaultResolution();
-			} else {
-				try {
-					String resolutionWidthPref = prefs.getString(ConfigActivity.CAMERA_RESOLUTION_LIST_KEY, "372");
-					int resolutionWidth = Integer.valueOf(resolutionWidthPref).intValue();
-	
-					Camera.Size resolution = null;
-					for (Camera.Size resSize : mResolutionList) {
-						if (resSize.width == resolutionWidth) {
-							resolution = resSize;
-							break;
+		String detected_signs[] = detectTrafficSigns(mRgba.getNativeObjAddr(), mViewMode, saveShapes, showFPS);
+		// Add new signs to hashmap
+		if (detected_signs != null) {
+			for (int i = 0; i < detected_signs.length; i++) {
+				DetectedSign detected_sign = new DetectedSign(detected_signs[i], System.currentTimeMillis());
+				String signId = detected_sign.getSignId();
+				
+				// XXX: if the speed signs changes this needs to be updated
+				// TODO: find a better way of dealing with this
+				final String speedSignStringStart = "C13_";
+				boolean addDetectedSign = true;
+				
+				// If it's a speed sign check if there are other speed signs on the table
+				// Only one speed sign (the one with the lowest speed allowance) will be displayed
+				if(signId.startsWith(speedSignStringStart)) {
+					try {
+						int signSpeedValue = Integer.valueOf(signId.substring(speedSignStringStart.length())).intValue();
+					    // Make a copy of the current hash
+						HashMap<String, DetectedSign> tempDetectedSigns = (HashMap<String, DetectedSign>) detectedSigns.clone();
+						Iterator<String> it = tempDetectedSigns.keySet().iterator();
+						
+						if(it.hasNext()) {
+							while(it.hasNext()) {
+								String element = (String)it.next();
+								if(element.startsWith(speedSignStringStart)) {
+									String signIdentifier = element.substring(speedSignStringStart.length());
+									try {
+										int elementSpeedValue = Integer.valueOf(signIdentifier).intValue();
+										// new sign has lower speed value than existing
+										// Remove it from the signs hashmap
+										if(signSpeedValue > elementSpeedValue) {
+											addDetectedSign = false;
+										} else {
+											// remove existent one with higher speed value
+											detectedSigns.remove(element);
+										}
+									} catch(NumberFormatException e){
+										// Shouldn't happen
+										e.printStackTrace();
+									}
+								}
+							}
 						}
+					} catch(NumberFormatException e){
+						// Shouldn't happen
+						e.printStackTrace();
 					}
-					if (resolution != null) {
-						// No need for validation because entries are retrieve from
-						// camera supported resolutions
-						mOpenCvCameraView.setResolution(resolution);
-	
-						String caption = Integer.valueOf(resolution.width).toString() + "x"
-								+ Integer.valueOf(resolution.height).toString();
-						Toast.makeText(this, caption, Toast.LENGTH_LONG).show();
-					} else {
-						setDefaultResolution();
-					}
-				} catch(NumberFormatException e) {
-					Log.e(TAG, e.getMessage());
-					setDefaultResolution();
+				}
+				
+				if(addDetectedSign) {
+					Log.i(TAG, "Add detected sign " + signId + " to the hash table");
+					detectedSigns.put(detected_sign.getSignId(), detected_sign);
 				}
 			}
 		}
+
+		drawDetectedSigns(mRgba);		
+
+		updateCurrentSpeedDisplay();
 		
-		
-		if (prefs.contains(ConfigActivity.CAMERA_ZOOM_KEY)) {
-			String zoomStr = prefs.getString(ConfigActivity.CAMERA_ZOOM_KEY, "0");
-			try{
-				mZoom = Integer.parseInt(zoomStr);			
-				mOpenCvCameraView.setZoom(mZoom);
-			} catch(NumberFormatException e) {
-				Log.e(TAG, e.getMessage());
-			}
-		}
+		return mRgba;
 	}	
 
 	public static int getResId(String resName, Class<?> c) {
@@ -524,89 +647,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		} catch (Exception e) {
 			return -1;
 		}
-	}
-
-	private void expireDetectedSigns() {
-		long currentMillis = System.currentTimeMillis();
-		for (Iterator<Map.Entry<String, DetectedSign>> it = detectedSigns.entrySet().iterator(); it.hasNext();) {
-			Map.Entry<String, DetectedSign> entry = it.next();
-			if (currentMillis - ((DetectedSign) entry.getValue()).getDetectedTimestamp() > (display_sign_duration * 1000)) {
-				it.remove();
-			}
-		}
-	}		
-
-	private void initializeTTS() {
-		tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
-			@SuppressWarnings("deprecation")
-			public void onInit(int paramAnonymousInt) {
-				if (paramAnonymousInt == 0) {
-					isTTSInitialized = true;
-					if (tts.isLanguageAvailable(Locale.US) >= 0) {
-						tts.setLanguage(Locale.US);
-					}
-
-					new Thread(new Runnable() {
-			            @Override
-			            public void run() {
-			            	((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
-							tts.speak("Traffic Sign Recognition application started", 1, null);
-//							tts.speak("Please be aware that the this application doesn't aim to replace" +
-//							" the vehicle driver in any operation. The aim of the application is to give" + 
-//							" additional information to enhance the driver experience.", 1, null);
-			            }
-			        }).start();
-					
-					return;
-				}
-				isTTSInitialized = false;
-			}
-		});
-	}
-	
-	private void initializeOCR() {
-		String str = getApplicationInfo().dataDir;
-		File localFile = new File(str, "tessdata");
-		if (!localFile.isDirectory()) {
-			localFile.mkdir();
-		}
-		try {
-			InputStream is = getAssets().open("eng.traineddata");
-			FileOutputStream os = new FileOutputStream(str + "/tessdata/eng.traineddata");
-			byte[] arrayOfByte = new byte[1024];
-			for (;;) {
-				int i = is.read(arrayOfByte);
-				if (i <= 0) {
-					is.close();
-					os.close();
-					return;
-				}
-				os.write(arrayOfByte, 0, i);
-			}
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
-	
-	public void appendLog(String text) {
-		File logFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
-		logFile = new File(logFile, "traffic_signs.log");
-		if (!logFile.exists()) {
-			try {
-				logFile.createNewFile();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-		}
-		try {
-			BufferedWriter buf = new BufferedWriter(new FileWriter(logFile, true));
-			buf.append(text);
-			buf.newLine();
-			buf.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-	}
+	}	
 	
 	@SuppressWarnings("unused")
 	private class DetectedSign {
@@ -649,17 +690,11 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 			this.signId = signId;
 		}
 	}
+	// EndRegion
 
-	private void updateConfig() {
-		startActivity(new Intent(this, ConfigActivity.class));
-	}	
-
-	private void updateSpeed(final ObdCommandJob job) {
-		SpeedObdCommand command = (SpeedObdCommand) job.getCommand();
-		currentSpeed = command.getMetricSpeed();
-		Log.d("OBD-II Operation", "Current Speed: " + currentSpeed);
-	}
 	
+	
+	// Region - OBD related methods		
 	public static String LookUpCommand(String txt) {
 		for (AvailableCommandNames item : AvailableCommandNames.values()) {
 			if (item.getValue().equals(txt))
@@ -682,7 +717,9 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 					currentSpeedStr = job.getCommand().getFormattedResult();
 					currentRawSpeedStr = job.getCommand().getResult();
 					
-					updateSpeed(job);					
+					if(currentSpeedStr != null && mSpeedTextView.getVisibility() != View.VISIBLE){
+						setSpeedTextViewVisibility();
+					}				
 				}
 			}
 			
@@ -770,6 +807,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				Log.d(TAG, "Not Binding to OBDGatewayService service.");
 			}			
 		}
+		setSpeedTextViewVisibility();
 	}
 
 	private void doUnbindService() {
@@ -783,5 +821,38 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 			} catch(Exception e) {}
 		}
 		isServiceBound = false;
+		
+		setSpeedTextViewVisibility();
 	}
+	
+	private void updateConfig() {
+		startActivity(new Intent(this, ConfigActivity.class));
+	}
+	
+	private void setSpeedTextViewVisibility(){
+		if(currentSpeedStr != null && showSpeed && obdEnabled) {
+			mSpeedTextView.setVisibility((showSpeed ? View.VISIBLE : View.GONE));
+		}
+	}
+	
+	private void appendLog(String text) {
+		File logFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+		logFile = new File(logFile, "traffic_signs.log");
+		if (!logFile.exists()) {
+			try {
+				logFile.createNewFile();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		try {
+			BufferedWriter buf = new BufferedWriter(new FileWriter(logFile, true));
+			buf.append(text);
+			buf.newLine();
+			buf.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+	// EndRegion
 }

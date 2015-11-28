@@ -8,6 +8,7 @@ import org.opencv.android.JavaCameraView;
 import android.content.Context;
 import android.hardware.Camera;
 import android.hardware.Camera.Size;
+import android.os.Build;
 import android.util.AttributeSet;
 import android.util.Log;
 
@@ -39,6 +40,61 @@ public class CameraView extends JavaCameraView {
     		mCamera.getParameters().getPreviewSize();
     	}
         return null;
+    }
+    
+    public Integer getExposureCompensation() {
+    	if(mCamera != null) {
+    		return mCamera.getParameters().getExposureCompensation();
+    	}
+    	return null;
+    }
+    
+    public void setExposureCompensation(int value) {
+    	if(mCamera != null) {    		
+    		Camera.Parameters parameters = mCamera.getParameters();
+    		if(value < parameters.getMinExposureCompensation()) {
+    			value = parameters.getMinExposureCompensation();
+    		}
+    		if(value > parameters.getMaxExposureCompensation()) {
+    			value = parameters.getMaxExposureCompensation();
+    		}
+    		parameters.setExposureCompensation(value);
+			mCamera.setParameters(parameters);
+    	}
+    }
+    
+    public void setOptimizedParameters() {
+    	if(mCamera != null) {
+    			//setExposureCompensation(-12);
+    		
+	    		Camera.Parameters parameters = mCamera.getParameters();
+	    		
+	    		parameters.setFocusMode("FOCUS_MODE_CONTINUOUS_VIDEO");
+	    		parameters.setVideoStabilization(true);
+	    		parameters.setWhiteBalance("WHITE_BALANCE_AUTO");
+	    		parameters.setAutoExposureLock(true);
+	    		parameters.setAutoWhiteBalanceLock(true);
+	    		
+				mCamera.setParameters(parameters);
+    	}
+    }
+    
+    public void setExposureDefaultValue() {
+    	setExposureCompensation(0);
+    }
+    
+    public Integer getMaxExposureCompensation() {
+    	if(mCamera != null) {
+    		return mCamera.getParameters().getMaxExposureCompensation();
+    	}
+    	return null;
+    }
+    
+    public Integer getMinExposureCompensation() {
+    	if(mCamera != null) {
+    		return mCamera.getParameters().getMinExposureCompensation();
+    	}
+    	return null;
     }
     
 	public void setZoom(int zoom) {
