@@ -8,9 +8,7 @@ import org.opencv.android.JavaCameraView;
 import android.content.Context;
 import android.hardware.Camera;
 import android.hardware.Camera.Size;
-import android.os.Build;
 import android.util.AttributeSet;
-import android.util.Log;
 
 public class CameraView extends JavaCameraView {
 

@@ -19,4 +19,34 @@
     <string name="bluetooth_disabled">Bluetooth is disable. Please enable bluetooth if you want to read speed information.</string>
     <string name="updatePreferences">Edit Preferences</string>
     <string name="bluetooth_nodevice">No Bluetooth Device connected</string>
+    <!-- Speed Signs Warnings -->
+    <string name="a1a">Warning, dangerous rigth turn!</string>
+    <string name="a1b">Warning, dangerous left turn!</string>
+    <string name="b1">Warning, priority road ahead!</string>
+    <string name="b2">Warning, Stop!!!</string>
+    <string name="b6">Road with both ways traffic!</string>
+    <string name="b8">Warning,crossroad ahead!</string>
+    <string name="b9a">Warning, left road cross ahead!</string>
+    <string name="b9b">Warning, right road cross ahead!</string>
+    <string name="c1">Forbidden, no entry road ahead!</string>
+    <string name="c2">Forbidden, no vehicles allowed ahead!</string>
+    <string name="c11a">Forbidden, no right turn ahead!</string>
+    <string name="c11b">Forbidden, no left turn ahead!</string>
+    <string name="c13_40">Maximum speed allowed is 40!</string>
+    <string name="c13_50">Maximum speed allowed is 50!</string>
+    <string name="c13_60">Maximum speed allowed is 60!</string>
+    <string name="c13_70">Maximum speed allowed is 70!</string>
+    <string name="c13_80">Maximum speed allowed is 80!</string>
+    <string name="c13_90">Maximum speed allowed is 90!</string>
+    <string name="c13_100">Maximum speed allowed is 100!</string>
+    <string name="c13_120">Maximum speed allowed is 120!</string>
+    <string name="c14a">Overcome other cars is forbidden!</string>
+    <string name="c14b">Overcome other cars is forbidden for trucks!</string>
+    <string name="d1a">Obligatory to go rigth way!</string>
+    <string name="d1c">Obligatory to go front!</string>
+    <string name="d3a">Obligatory to go by rigth side!</string>
+    <string name="d4">Obligatory to go around by rigth side!</string>
+    <string name="d8_40">Obligatory to go above 40!</string>
+    <string name="d8_50">Obligatory to go above 50!</string>
+    <string name="h7">Carefull, pedestrian crossing!</string>
 </resources>

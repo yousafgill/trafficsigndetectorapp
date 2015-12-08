@@ -60,6 +60,7 @@ import com.duvallsoftware.odbhelpers.ConfigActivity;
 import com.duvallsoftware.odbhelpers.ObdCommandJob;
 import com.duvallsoftware.odbhelpers.ObdGatewayService;
 import com.duvallsoftware.trafficsigndetector.R.raw;
+import com.duvallsoftware.trafficsigndetector.R.string;
 
 public class TrafficSignDetectorActivity extends Activity implements CvCameraViewListener2 {
 	static {
@@ -146,10 +147,11 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	private static boolean bluetoothDefaultIsEnable = false;
 	private boolean preRequisites = true;	
 
-	// Default 5 Seconds
-	private int display_sign_duration = 5;
+	// Default 30 Seconds
+	private int display_sign_duration = 30;
 
-	private HashMap<String, DetectedSign> detectedSigns = new HashMap<String, DetectedSign>();
+	private HashMap<String, TrafficSign> detectedSigns = new HashMap<String, TrafficSign>();
+	private HashMap<String, TrafficSign> detectedSignsWarnings = new HashMap<String, TrafficSign>();	
 
 	/** Called when the activity is first created. */
 	@Override
@@ -200,6 +202,9 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 			            public void run() {
 			            	((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
 							tts.speak("Traffic Sign Recognition application started", 1, null);
+//							tts.speak("Please be aware that the this application doesn't aim to replace" +
+//							" the vehicle driver in any operation. The aim of the application is to give" + 
+//							" additional information to enhance the driver experience.", 1, null);
 			            }
 			        }).start();
 					
@@ -275,6 +280,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		}
 		if (prefs.contains(ConfigActivity.SHOW_SPEED_KEY)) {
 			showSpeed = prefs.getBoolean(ConfigActivity.SHOW_SPEED_KEY, true);
+//			mSpeedTextView.setVisibility((showSpeed ? View.VISIBLE : View.GONE));
 		}
 		if (prefs.contains(ConfigActivity.SIGNS_DISPLAY_PERIOD_KEY)) {
 			String displaySignDurationDefaultValue = "5";
@@ -517,9 +523,23 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	 */
 	private void expireDetectedSigns() {
 		long currentMillis = System.currentTimeMillis();
-		for (Iterator<Map.Entry<String, DetectedSign>> it = detectedSigns.entrySet().iterator(); it.hasNext();) {
-			Map.Entry<String, DetectedSign> entry = it.next();
-			if (currentMillis - ((DetectedSign) entry.getValue()).getDetectedTimestamp() > (display_sign_duration * 1000)) {
+		for (Iterator<Map.Entry<String, TrafficSign>> it = detectedSigns.entrySet().iterator(); it.hasNext();) {
+			Map.Entry<String, TrafficSign> entry = it.next();
+			int signDisplayDuration = display_sign_duration;
+			if(((TrafficSign) entry.getValue()).getSignId().toLowerCase().startsWith("c13_")) {
+				// Display the Speed Signs a little bit longer 
+				signDisplayDuration *= (int)1.5;
+			}
+			if (currentMillis - ((TrafficSign) entry.getValue()).getDetectedTimestamp() > (signDisplayDuration * 1000)) {
+				it.remove();
+			}
+		}
+		
+		for (Iterator<Map.Entry<String, TrafficSign>> it = detectedSignsWarnings.entrySet().iterator(); it.hasNext();) {
+			Map.Entry<String, TrafficSign> entry = it.next();
+			int signWarningTimeLapse = 2000; // 2 seconds (in miliseconds)
+
+			if (currentMillis - ((TrafficSign) entry.getValue()).getDetectedTimestamp() > signWarningTimeLapse) {
 				it.remove();
 			}
 		}
@@ -532,7 +552,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		final int x = padding;
 
 		int i = 0, y_pos_idx = -1;
-		for (DetectedSign detected_sign : detectedSigns.values()) {
+		for (TrafficSign detected_sign : detectedSigns.values()) {
 			if (y_pos_idx++ == 3) {
 				y_pos_idx = 0;
 			}
@@ -566,6 +586,8 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 					mSpeedTextView.setText(currentSpeedStr);
 				}
 			});
+			
+//			Imgproc.putText(mRgba, currentSpeedStr, new Point(180, 430), Core.FONT_HERSHEY_DUPLEX, 2, new Scalar(255, 0, 0, 255), 5);
 //			Imgproc.putText(mRgba, "RAW SPEED: " + currentRawSpeedStr, new Point(180, 450), Core.FONT_HERSHEY_DUPLEX, 4, new Scalar(255, 0, 0, 255), 2);
 		}
 	}
@@ -581,8 +603,11 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		// Add new signs to hashmap
 		if (detected_signs != null) {
 			for (int i = 0; i < detected_signs.length; i++) {
-				DetectedSign detected_sign = new DetectedSign(detected_signs[i], System.currentTimeMillis());
+				final TrafficSign detected_sign = new TrafficSign(detected_signs[i], System.currentTimeMillis());
+				// TODO: Skip adding multiple speed signs (C13_XXX)- add only the one with lower limit
+				// This should also take into account possible existent speed signs in the hashmap
 				String signId = detected_sign.getSignId();
+				Log.i(TAG, "Found new Sign: " + detected_sign.getSignId());
 				
 				// XXX: if the speed signs changes this needs to be updated
 				// TODO: find a better way of dealing with this
@@ -594,24 +619,31 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				if(signId.startsWith(speedSignStringStart)) {
 					try {
 						int signSpeedValue = Integer.valueOf(signId.substring(speedSignStringStart.length())).intValue();
+						Log.i(TAG, "Found new Sign with value = " + signSpeedValue);
 					    // Make a copy of the current hash
-						HashMap<String, DetectedSign> tempDetectedSigns = (HashMap<String, DetectedSign>) detectedSigns.clone();
+						HashMap<String, TrafficSign> tempDetectedSigns = (HashMap<String, TrafficSign>) detectedSigns.clone();
 						Iterator<String> it = tempDetectedSigns.keySet().iterator();
 						
 						if(it.hasNext()) {
 							while(it.hasNext()) {
 								String element = (String)it.next();
+								Log.i(TAG, "Test Hash element " + element + " ...");
 								if(element.startsWith(speedSignStringStart)) {
 									String signIdentifier = element.substring(speedSignStringStart.length());
+									Log.i(TAG, "Test Hash element identifier = " + signIdentifier);
 									try {
 										int elementSpeedValue = Integer.valueOf(signIdentifier).intValue();
+										Log.i(TAG, "Test Hash element identifier value = " + elementSpeedValue);
 										// new sign has lower speed value than existing
 										// Remove it from the signs hashmap
 										if(signSpeedValue > elementSpeedValue) {
+											Log.i(TAG, "New detected sign has higher value = " + signSpeedValue + ". Don't add it to the hash table");
 											addDetectedSign = false;
 										} else {
+											Log.i(TAG, "New detected sign has lower value = " + signSpeedValue + ". Add it to the hash table");
 											// remove existent one with higher speed value
 											detectedSigns.remove(element);
+											Log.i(TAG, "Remove Sign " + element + " from the hash table");											
 										}
 									} catch(NumberFormatException e){
 										// Shouldn't happen
@@ -629,6 +661,24 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				if(addDetectedSign) {
 					Log.i(TAG, "Add detected sign " + signId + " to the hash table");
 					detectedSigns.put(detected_sign.getSignId(), detected_sign);
+					
+					Log.i(TAG, "signsWarningVoiceEnabled: " + signsWarningVoiceEnabled);
+					Log.i(TAG, "isTTSInitialized: " + isTTSInitialized);
+					// If voice warnings are on, warn about the detected sign
+					if(signsWarningVoiceEnabled && isTTSInitialized && !detectedSignsWarnings.containsKey(signId)) {
+						detectedSignsWarnings.put(signId, detected_sign);
+						
+						new Thread(new Runnable() {
+				            @SuppressWarnings("deprecation")
+							@Override
+				            public void run() {
+				            	((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
+				            	String speechStr = getResString(detected_sign.getSignId().toLowerCase());
+				            	Log.i(TAG, "speechStr: " + speechStr);
+								tts.speak(speechStr, 1, null);
+				            }
+				        }).start();
+					}
 				}
 			}
 		}
@@ -640,6 +690,15 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		return mRgba;
 	}	
 
+	public String getResString(String resName) {
+		try {
+			int resId = getResources().getIdentifier(resName, "string", getPackageName());
+			return getString(resId);
+		} catch (Exception e) {
+			return "";
+		}
+	}
+	
 	public static int getResId(String resName, Class<?> c) {
 		try {
 			Field idField = c.getDeclaredField(resName);
@@ -648,50 +707,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 			return -1;
 		}
 	}	
-	
-	@SuppressWarnings("unused")
-	private class DetectedSign {
-
-		private String signId = null;
-		private long detectedTimestamp = -1;
-
-		public DetectedSign(String signId, long timestampt) {
-			this.signId = signId;
-			this.detectedTimestamp = timestampt;
-		}
-
-		/**
-		 * @return the detectedTimestamp
-		 */
-		public long getDetectedTimestamp() {
-			return detectedTimestamp;
-		}
-
-		/**
-		 * @param detectedTimestamp
-		 *            the detectedTimestamp to set
-		 */		
-		public void setDetectedTimestamp(long detectedTimestamp) {
-			this.detectedTimestamp = detectedTimestamp;
-		}
-
-		/**
-		 * @return the signId
-		 */
-		public String getSignId() {
-			return signId;
-		}
-
-		/**
-		 * @param signId
-		 *            the signId to set
-		 */
-		public void setSignId(String signId) {
-			this.signId = signId;
-		}
-	}
 	// EndRegion
-
 	
 	
 	// Region - OBD related methods		

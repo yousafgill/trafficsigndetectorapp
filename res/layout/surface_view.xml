@@ -1,38 +1,55 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:orientation="horizontal"
     android:layout_height="match_parent" >
 
     <com.duvallsoftware.trafficsigndetector.CameraView
+        android:id="@+id/activity_surface_view"
         android:layout_width="fill_parent"
         android:layout_height="fill_parent"
-        android:layout_gravity="top"
-        android:id="@+id/activity_surface_view" />
+        android:layout_gravity="top" />
     
-    <ImageButton 
-        android:onClick="callPreferences"
-        android:src="@android:drawable/ic_menu_preferences"
-        android:background="@drawable/round_button"
-        android:id="@+id/preferencesButton"
-        android:layout_alignParentBottom="true"
-        android:layout_alignParentRight="true"
-        android:layout_marginRight="10dp"
-        android:layout_marginBottom="10dp"
-        android:padding="5dp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content" />
-    
-    <ImageButton
-        android:onClick="toggleSounds"
-        android:src="@android:drawable/ic_lock_silent_mode"
-        android:background="@drawable/round_button"
-        android:id="@+id/muteButton"
-        android:layout_toLeftOf="@+id/preferencesButton"
-        android:layout_alignBottom="@+id/preferencesButton"
-        android:layout_marginRight="10dp"
-        android:padding="5dp"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content" />
+    <RelativeLayout
+	    android:layout_width="match_parent"
+	    android:orientation="horizontal"
+	    android:layout_height="match_parent" >
+	    <TextView
+	        android:id="@+id/speedTextView"
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content"
+	        android:layout_alignBottom="@+id/preferencesButton"
+	        android:layout_marginBottom="14dp"
+	        android:layout_marginRight="200dp"
+	        android:layout_alignParentRight="true"
+	        android:textColor="#C80000"
+	        android:textSize="44sp"
+	        android:textStyle="bold" />
+	    
+	    <ImageButton 
+	        android:id="@+id/preferencesButton"
+	        android:onClick="callPreferences"
+	        android:src="@android:drawable/ic_menu_preferences"
+	        android:background="@drawable/round_button"        
+	        android:layout_alignParentBottom="true"
+	        android:layout_alignParentRight="true"
+	        android:layout_marginRight="10dp"
+	        android:layout_marginBottom="10dp"
+	        android:padding="5dp"
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content" />
+	    
+	    <ImageButton
+	        android:id="@+id/muteButton"
+	        android:onClick="toggleSounds"
+	        android:src="@android:drawable/ic_lock_silent_mode"
+	        android:background="@drawable/round_button"        
+	        android:layout_toLeftOf="@+id/preferencesButton"
+	        android:layout_alignBottom="@+id/preferencesButton"
+	        android:layout_marginRight="10dp"
+	        android:padding="5dp"
+	        android:layout_width="wrap_content"
+	        android:layout_height="wrap_content" />
+	    </RelativeLayout>
 
-</RelativeLayout>
+</FrameLayout>
