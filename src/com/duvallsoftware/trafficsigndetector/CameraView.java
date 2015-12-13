@@ -68,7 +68,7 @@ public class CameraView extends JavaCameraView {
 	    		Camera.Parameters parameters = mCamera.getParameters();
 	    		
 	    		parameters.setFocusMode("FOCUS_MODE_CONTINUOUS_VIDEO");
-	    		parameters.setVideoStabilization(true);
+//	    		parameters.setVideoStabilization(true);
 	    		parameters.setWhiteBalance("WHITE_BALANCE_AUTO");
 	    		parameters.setAutoExposureLock(true);
 	    		parameters.setAutoWhiteBalanceLock(true);

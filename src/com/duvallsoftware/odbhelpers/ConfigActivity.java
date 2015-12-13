@@ -44,8 +44,7 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 	// OBD
 	public static final String OBD_ENABLED_KEY = "enable_obd_preference";
 	public static final String OBD_UPDATE_PERIOD_KEY = "obd_update_period_preference";
-	public static final String PROTOCOLS_LIST_KEY = "obd_protocols_preference";
-	public static final String IMPERIAL_UNITS_KEY = "imperial_units_preference";
+	public static final String PROTOCOLS_LIST_KEY = "obd_protocols_preference";	
 	
 	// Camera
 	public static final String CAMERA_RESOLUTION_LIST_KEY = "camera_resolution_list_preference";
@@ -61,8 +60,11 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 	public static final String ENABLE_SIGNS_VOICE_KEY = "enable_signs_voice_preference";
 	public static final String ENABLE_SPEED_WARNING_VOICE_KEY = "enable_speed_warning_voice_preference";
 	
-	// Other	
+	// Other
+	public static final String DEFAULT_MAXIMUM_SPEED_KEY = "default_max_speed_preference";
+	public static final String IMPERIAL_UNITS_KEY = "imperial_units_preference";
 	public static final String ENABLE_PREPROCESSING_OPTIONS_KEY = "enable_preprocessing_options_preference";
+	
 	
 	/**
 	 * @param prefs
@@ -230,6 +232,19 @@ public class ConfigActivity extends PreferenceActivity implements OnPreferenceCh
 				int value = Integer.parseInt(newValue.toString());
 				if( value < 0 || value > 60) {
 					Toast.makeText(this, "Please enter a value between 0 and 60.", Toast.LENGTH_LONG).show();
+					return false;
+				}
+				return true;
+			} catch (Exception e) {
+				Toast.makeText(this, "Couldn't parse '" + newValue.toString() + "' as a integer.", Toast.LENGTH_LONG)
+						.show();
+			}
+		}
+		if (DEFAULT_MAXIMUM_SPEED_KEY.equals(preference.getKey())) {
+			try {
+				int value = Integer.parseInt(newValue.toString());
+				if( value < 0 ) {
+					Toast.makeText(this, "Please enter a value greater than 0.", Toast.LENGTH_LONG).show();
 					return false;
 				}
 				return true;

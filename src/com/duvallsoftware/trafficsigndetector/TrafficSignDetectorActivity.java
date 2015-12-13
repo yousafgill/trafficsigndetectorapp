@@ -2,10 +2,8 @@ package com.duvallsoftware.trafficsigndetector;
 
 import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.util.Date;
 import java.util.HashMap;
@@ -17,11 +15,8 @@ import java.util.Map;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.android.Utils;
-import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
-import org.opencv.core.Point;
-import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
 import pt.lighthouselabs.obd.commands.SpeedObdCommand;
@@ -35,7 +30,6 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.hardware.Camera;
-import android.hardware.Camera.Size;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Environment;
@@ -60,13 +54,17 @@ import com.duvallsoftware.odbhelpers.ConfigActivity;
 import com.duvallsoftware.odbhelpers.ObdCommandJob;
 import com.duvallsoftware.odbhelpers.ObdGatewayService;
 import com.duvallsoftware.trafficsigndetector.R.raw;
-import com.duvallsoftware.trafficsigndetector.R.string;
 
 public class TrafficSignDetectorActivity extends Activity implements CvCameraViewListener2 {
 	static {
 		RoboGuice.setUseAnnotationDatabases(false);
 	}
 
+	private static final String SPEED_SIGNS_PREFIX = "c13_";
+	
+	private static int DEFAULT_MAX_SPEED = 120;
+	private static int currentMaxSpeed = DEFAULT_MAX_SPEED;
+	
 	private boolean isDebug = true;
 	
 	private TextToSpeech tts;
@@ -147,9 +145,13 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	private static boolean bluetoothDefaultIsEnable = false;
 	private boolean preRequisites = true;	
 
-	// Default 30 Seconds
-	private int display_sign_duration = 30;
-
+	// Default Timings
+	private int display_sign_duration = 30; //seconds
+	private final int VOICE_WARNING_INTERVALS = 10; //seconds
+	private final String TIME_SPEED_WARNING_KEY = "speedWarningKey";
+	
+	private HashMap<String, Long> warningTimingsHasMap = new HashMap<String, Long>();
+	
 	private HashMap<String, TrafficSign> detectedSigns = new HashMap<String, TrafficSign>();
 	private HashMap<String, TrafficSign> detectedSignsWarnings = new HashMap<String, TrafficSign>();	
 
@@ -288,8 +290,17 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 			try {
 				display_sign_duration = Integer.parseInt(display_sign_duration_str);
 			} catch(NumberFormatException e) { 
-				display_sign_duration = 5; // default value
+				display_sign_duration = 30; // default value
 			}
+		}
+		if (prefs.contains(ConfigActivity.DEFAULT_MAXIMUM_SPEED_KEY)) {
+			String default_max_speed_str = prefs.getString(ConfigActivity.DEFAULT_MAXIMUM_SPEED_KEY, "0");
+			try {
+				DEFAULT_MAX_SPEED = Integer.parseInt(default_max_speed_str);
+			} catch(NumberFormatException e) { 
+				DEFAULT_MAX_SPEED = 120; // default value
+			}
+			currentMaxSpeed = DEFAULT_MAX_SPEED;
 		}
 		
 		// OBD
@@ -390,9 +401,9 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 	
 			if(btAdapter != null) {
 				if(!btAdapter.isEnabled()) {
-					Log.i(TAG, "Enable Bluetooth");
+					Log.d(TAG, "Enable Bluetooth");
 					if(!btAdapter.enable()) {
-						Log.i(TAG, "Failed to enable Bluetooth");
+						Log.d(TAG, "Failed to enable Bluetooth");
 						showDialog(R.string.bluetooth_disabled);
 					} else {
 						startLiveData();
@@ -437,7 +448,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		// Disable Bluetooth if it was disabled when starting the APP
 		final BluetoothAdapter btAdapter = BluetoothAdapter.getDefaultAdapter();
 		if (btAdapter != null && btAdapter.isEnabled() && !bluetoothDefaultIsEnable) {
-			Log.i(TAG, "Disable Bluetooth");
+			Log.d(TAG, "Disable Bluetooth");
 			btAdapter.disable();
 		}
 				
@@ -526,7 +537,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		for (Iterator<Map.Entry<String, TrafficSign>> it = detectedSigns.entrySet().iterator(); it.hasNext();) {
 			Map.Entry<String, TrafficSign> entry = it.next();
 			int signDisplayDuration = display_sign_duration;
-			if(((TrafficSign) entry.getValue()).getSignId().toLowerCase().startsWith("c13_")) {
+			if(((TrafficSign) entry.getValue()).getSignId().toLowerCase().startsWith(SPEED_SIGNS_PREFIX)) {
 				// Display the Speed Signs a little bit longer 
 				signDisplayDuration *= (int)1.5;
 			}
@@ -543,6 +554,19 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				it.remove();
 			}
 		}
+		
+		// Update the current max Speed allowed
+		currentMaxSpeed = DEFAULT_MAX_SPEED;
+		for (Iterator<Map.Entry<String, TrafficSign>> it = detectedSigns.entrySet().iterator(); it.hasNext();) {
+			Map.Entry<String, TrafficSign> entry = it.next();
+			String signId = ((TrafficSign) entry.getValue()).getSignId().toLowerCase();
+			if(signId.startsWith(SPEED_SIGNS_PREFIX)) {
+				try {
+					currentMaxSpeed = Integer.valueOf(signId.substring(signId.indexOf(SPEED_SIGNS_PREFIX))).intValue();
+					Log.d(TAG, "Max speed set to " + currentMaxSpeed);
+				} catch(NumberFormatException e) {}
+			}
+		}		
 	}
 	
 	private void drawDetectedSigns(Mat mRgba) {
@@ -570,7 +594,7 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 					image.release();
 					imageDst.release();
 				} catch (Exception e) {
-					Log.i(TAG, "Exception: " + e.getMessage());
+					Log.d(TAG, "Exception: " + e.getMessage());
 				}
 			}
 		}
@@ -584,6 +608,19 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				public void run() {
 					// Set Current Speed					
 					mSpeedTextView.setText(currentSpeedStr);
+					try {
+						int currentSpeedValue = Integer.valueOf(currentSpeedStr).intValue();
+						// Only play voice warning if it is defined to ON
+						if(speedWarningVoiceEnabled && currentSpeedValue > currentMaxSpeed) {
+							Long last_speed_warning_timestamp = warningTimingsHasMap.get(TIME_SPEED_WARNING_KEY);
+							// Warn only if last warning was before defined interval
+							if( last_speed_warning_timestamp == null || 
+									System.currentTimeMillis() > (last_speed_warning_timestamp + (VOICE_WARNING_INTERVALS * 1000))) {
+								warningTimingsHasMap.put(TIME_SPEED_WARNING_KEY, System.currentTimeMillis());
+								say("Warning! Current vehicle speed is above limit!");
+							}
+						}
+					} catch(NumberFormatException e){}
 				}
 			});
 			
@@ -607,19 +644,18 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				// TODO: Skip adding multiple speed signs (C13_XXX)- add only the one with lower limit
 				// This should also take into account possible existent speed signs in the hashmap
 				String signId = detected_sign.getSignId();
-				Log.i(TAG, "Found new Sign: " + detected_sign.getSignId());
+				Log.d(TAG, "Found new Sign: " + detected_sign.getSignId());
 				
 				// XXX: if the speed signs changes this needs to be updated
 				// TODO: find a better way of dealing with this
-				final String speedSignStringStart = "C13_";
 				boolean addDetectedSign = true;
 				
 				// If it's a speed sign check if there are other speed signs on the table
 				// Only one speed sign (the one with the lowest speed allowance) will be displayed
-				if(signId.startsWith(speedSignStringStart)) {
+				if(signId.toLowerCase().startsWith(SPEED_SIGNS_PREFIX)) {
 					try {
-						int signSpeedValue = Integer.valueOf(signId.substring(speedSignStringStart.length())).intValue();
-						Log.i(TAG, "Found new Sign with value = " + signSpeedValue);
+						int signSpeedValue = Integer.valueOf(signId.toLowerCase().substring(SPEED_SIGNS_PREFIX.length())).intValue();
+						Log.d(TAG, "Found new Sign with value = " + signSpeedValue);
 					    // Make a copy of the current hash
 						HashMap<String, TrafficSign> tempDetectedSigns = (HashMap<String, TrafficSign>) detectedSigns.clone();
 						Iterator<String> it = tempDetectedSigns.keySet().iterator();
@@ -627,23 +663,23 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 						if(it.hasNext()) {
 							while(it.hasNext()) {
 								String element = (String)it.next();
-								Log.i(TAG, "Test Hash element " + element + " ...");
-								if(element.startsWith(speedSignStringStart)) {
-									String signIdentifier = element.substring(speedSignStringStart.length());
-									Log.i(TAG, "Test Hash element identifier = " + signIdentifier);
+								Log.d(TAG, "Test Hash element " + element + " ...");
+								if(element.toLowerCase().startsWith(SPEED_SIGNS_PREFIX)) {
+									String signIdentifier = element.toLowerCase().substring(SPEED_SIGNS_PREFIX.length());
+									Log.d(TAG, "Test Hash element identifier = " + signIdentifier);
 									try {
 										int elementSpeedValue = Integer.valueOf(signIdentifier).intValue();
-										Log.i(TAG, "Test Hash element identifier value = " + elementSpeedValue);
+										Log.d(TAG, "Test Hash element identifier value = " + elementSpeedValue);
 										// new sign has lower speed value than existing
 										// Remove it from the signs hashmap
 										if(signSpeedValue > elementSpeedValue) {
-											Log.i(TAG, "New detected sign has higher value = " + signSpeedValue + ". Don't add it to the hash table");
+											Log.d(TAG, "New detected sign has higher value = " + signSpeedValue + ". Don't add it to the hash table");
 											addDetectedSign = false;
 										} else {
-											Log.i(TAG, "New detected sign has lower value = " + signSpeedValue + ". Add it to the hash table");
+											Log.d(TAG, "New detected sign has lower value = " + signSpeedValue + ". Add it to the hash table");
 											// remove existent one with higher speed value
 											detectedSigns.remove(element);
-											Log.i(TAG, "Remove Sign " + element + " from the hash table");											
+											Log.d(TAG, "Remove Sign " + element + " from the hash table");											
 										}
 									} catch(NumberFormatException e){
 										// Shouldn't happen
@@ -659,25 +695,22 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 				}
 				
 				if(addDetectedSign) {
-					Log.i(TAG, "Add detected sign " + signId + " to the hash table");
+					Log.d(TAG, "Add detected sign " + signId + " to the hash table");
 					detectedSigns.put(detected_sign.getSignId(), detected_sign);
 					
-					Log.i(TAG, "signsWarningVoiceEnabled: " + signsWarningVoiceEnabled);
-					Log.i(TAG, "isTTSInitialized: " + isTTSInitialized);
+					Log.d(TAG, "signsWarningVoiceEnabled: " + signsWarningVoiceEnabled);
+					Log.d(TAG, "isTTSInitialized: " + isTTSInitialized);
 					// If voice warnings are on, warn about the detected sign
 					if(signsWarningVoiceEnabled && isTTSInitialized && !detectedSignsWarnings.containsKey(signId)) {
-						detectedSignsWarnings.put(signId, detected_sign);
-						
-						new Thread(new Runnable() {
-				            @SuppressWarnings("deprecation")
-							@Override
-				            public void run() {
-				            	((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
-				            	String speechStr = getResString(detected_sign.getSignId().toLowerCase());
-				            	Log.i(TAG, "speechStr: " + speechStr);
-								tts.speak(speechStr, 1, null);
-				            }
-				        }).start();
+											detectedSignsWarnings.put(signId, detected_sign);
+						String detectedSignKey = detected_sign.getSignId().toLowerCase();
+						Long last_sign_warning_timestamp = warningTimingsHasMap.get(detectedSignKey);
+						// Warn only if last warning was before defined interval
+						if( last_sign_warning_timestamp == null || 
+								System.currentTimeMillis() > (last_sign_warning_timestamp + (VOICE_WARNING_INTERVALS * 1000))) {
+							warningTimingsHasMap.put(detectedSignKey, System.currentTimeMillis());
+							say(getResString(detectedSignKey));
+						}						
 					}
 				}
 			}
@@ -688,7 +721,18 @@ public class TrafficSignDetectorActivity extends Activity implements CvCameraVie
 		updateCurrentSpeedDisplay();
 		
 		return mRgba;
-	}	
+	}
+	
+	private void say(final String text) {
+		new Thread(new Runnable() {
+            @SuppressWarnings("deprecation")
+			@Override
+            public void run() {
+            	((AudioManager) getSystemService("audio")).setSpeakerphoneOn(true);
+				tts.speak(text, 1, null);
+            }
+        }).start();
+	}
 
 	public String getResString(String resName) {
 		try {
